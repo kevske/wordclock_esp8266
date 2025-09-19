@@ -26,6 +26,9 @@ static void makeNtpPacket(uint8_t* buf, unsigned long seconds_since_1900) {
 int main() {
   std::printf("Running NTP recovery tests...\n");
 
+  // Ensure clean mock time
+  __mock_millis = 0;
+
   WiFiUDP udp;
   int utc_minutes = 0; // UTC
   NTPClientPlus ntp(udp, "pool.ntp.org", utc_minutes, true);
@@ -36,7 +39,8 @@ int main() {
   makeNtpPacket(pkt, t_seed);
 
   udp.begin(1337);
-  udp.enqueuePacket(pkt, sizeof(pkt));
+  // Prepare the response so updateNTP()'s endPacket() will deliver it
+  udp.prepareIncoming(pkt, sizeof(pkt));
   int r = ntp.updateNTP();
   EXPECT_EQ(r, 0, "seed update ok");
 
@@ -54,7 +58,7 @@ int main() {
   // Now deliver a fresh NTP packet 1 hour later than seed
   unsigned long t_recover = EPOCH_OFFSET_1900_TO_1970 + 10800UL; // 3h after epoch
   makeNtpPacket(pkt, t_recover);
-  udp.enqueuePacket(pkt, sizeof(pkt));
+  udp.prepareIncoming(pkt, sizeof(pkt));
   int rr = ntp.updateNTP();
   EXPECT_EQ(rr, 0, "recovery update ok");
 
