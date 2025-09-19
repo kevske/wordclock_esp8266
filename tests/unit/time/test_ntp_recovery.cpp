@@ -30,8 +30,8 @@ int main() {
   int utc_minutes = 0; // UTC
   NTPClientPlus ntp(udp, "pool.ntp.org", utc_minutes, true);
 
-  const unsigned long SEVENZYYEARS = 2208988800UL;
-  unsigned long t_seed = SEVENZYYEARS + 7200UL; // 2h after epoch
+  const unsigned long EPOCH_OFFSET_1900_TO_1970 = 2208988800UL;
+  unsigned long t_seed = EPOCH_OFFSET_1900_TO_1970 + 7200UL; // 2h after epoch
   uint8_t pkt[NTP_PACKET_SIZE];
   makeNtpPacket(pkt, t_seed);
 
@@ -52,7 +52,7 @@ int main() {
   EXPECT_TRUE(beforeRecover >= base + 20, "time advanced across failures");
 
   // Now deliver a fresh NTP packet 1 hour later than seed
-  unsigned long t_recover = SEVENZYYEARS + 10800UL; // 3h after epoch
+  unsigned long t_recover = EPOCH_OFFSET_1900_TO_1970 + 10800UL; // 3h after epoch
   makeNtpPacket(pkt, t_recover);
   udp.enqueuePacket(pkt, sizeof(pkt));
   int rr = ntp.updateNTP();

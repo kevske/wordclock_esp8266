@@ -7,7 +7,6 @@
 #include "../mocks/Arduino.h"
 #include "../mocks/Adafruit_GFX.h"
 #include "../mocks/Adafruit_NeoMatrix.h"
-#include "../mocks/udplogger.h"
 
 // Include the code under test
 #include "../../../ledmatrix.h"

@@ -7,7 +7,7 @@ LDFLAGS ?=
 
 SRCS = \
 	test_color_math.cpp \
-	../../../ledmatrix.cpp
+	ledmatrix_unit_translation.cpp
 
 OBJS = $(SRCS:.cpp=.o)
 BIN  = test_color_math
