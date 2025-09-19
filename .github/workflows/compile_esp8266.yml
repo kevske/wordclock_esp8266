@@ -46,17 +46,17 @@ jobs:
             elif [ -f secrets_example.h ]; then
               cp secrets_example.h secrets.h
             else
-              cat > secrets.h <<'EOF'
-              #ifndef SECRETS_H
-              #define SECRETS_H
-              // Fallback secrets for CI builds. For local builds, create your own secrets.h
-              // and/or use WiFiManager setup as described in README.
-              #define WIFI_SSID "CI_DUMMY"
-              #define WIFI_PASS "CI_DUMMY"
-              #define AP_SSID   "WordclockAP"
-              #define AP_PASS   "12345678"
-              #endif
-              EOF
+              {
+                echo '#ifndef SECRETS_H'
+                echo '#define SECRETS_H'
+                echo '// Fallback secrets for CI builds. For local builds, create your own secrets.h'
+                echo '// and/or use WiFiManager setup as described in README.'
+                echo '#define WIFI_SSID "CI_DUMMY"'
+                echo '#define WIFI_PASS "CI_DUMMY"'
+                echo '#define AP_SSID   "WordclockAP"'
+                echo '#define AP_PASS   "12345678"'
+                echo '#endif'
+              } > secrets.h
             fi
           fi
           arduino-cli compile -v --fqbn esp8266:esp8266:nodemcuv2 wordclock_esp8266.ino
