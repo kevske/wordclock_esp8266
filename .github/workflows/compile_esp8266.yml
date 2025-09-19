@@ -39,5 +39,5 @@ jobs:
 
       - name: Compile Sketch
         run: |
-          mv secrets_example.h secrets.h
+          if [ -f secrets_example.h ]; then cp secrets_example.h secrets.h; fi
           arduino-cli compile -v --fqbn esp8266:esp8266:nodemcuv2 wordclock_esp8266.ino
