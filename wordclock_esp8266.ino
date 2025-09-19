@@ -518,7 +518,7 @@ void loop() {
     uint8_t seconds = ntp.getSeconds();
     
     // Check if we should start displaying a random message
-    if(!randomMessageActive && shouldDisplayRandomMessage(hours, minutes, seconds)) {
+    if(!randomMessageActive && !nightMode && !ledOff && shouldDisplayRandomMessage(hours, minutes, seconds)) {
       randomMessageActive = true;
       displayRandomMessage(true); // Initialize the message display
     }
@@ -526,10 +526,16 @@ void loop() {
   
   // If a random message is active, continue displaying it
   if(randomMessageActive) {
-    // Call the display function to continue or end the message
-    if(displayRandomMessage(false) == 1) {
-      // Message display is complete
+    // Respect night mode or LED off: cancel message immediately
+    if (nightMode || ledOff) {
       randomMessageActive = false;
+      ledmatrix.gridFlush();
+    } else {
+      // Call the display function to continue or end the message
+      if(displayRandomMessage(false) == 1) {
+        // Message display is complete
+        randomMessageActive = false;
+      }
     }
   }
 }
