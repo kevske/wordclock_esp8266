@@ -5,8 +5,8 @@
 
 using byte = uint8_t;
 
-// Simulated time base for tests
-static unsigned long __mock_millis = 0;
+// Global simulated time base for tests (defined in Arduino_time.cpp)
+extern unsigned long __mock_millis;
 
 inline void randomSeed(unsigned long) {}
 inline int analogRead(uint8_t) { return 0; }
