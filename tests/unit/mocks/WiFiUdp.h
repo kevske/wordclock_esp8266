@@ -4,6 +4,12 @@
 #include <queue>
 #include <string>
 
+// Minimal IPAddress placeholder to satisfy declarations
+class IPAddress {
+public:
+  IPAddress() = default;
+};
+
 class UDP {
 public:
   virtual ~UDP() = default;
@@ -24,6 +30,7 @@ public:
     return (int)n;
   }
   virtual void beginPacket(const char*, uint16_t) { /* ignore */ }
+  virtual void beginPacket(const IPAddress&, uint16_t) { /* ignore */ }
   virtual void beginPacket(uint32_t, uint16_t) { /* ignore */ }
   virtual size_t write(const uint8_t*, size_t) { return 0; }
   virtual void endPacket() {}

@@ -1,6 +1,7 @@
 #pragma once
 #include <cstdint>
 #include <cstdio>
+#include <string>
 
 using byte = uint8_t;
 
@@ -25,15 +26,34 @@ inline unsigned int word(uint8_t high, uint8_t low) {
   return ((unsigned int)high << 8) | low;
 }
 
-// Minimal String stand-in if needed in future (avoid pulling std::string everywhere)
+// Minimal String stand-in for tests
 class String {
 public:
   String() = default;
-  String(const char*) {}
+  String(const char* s) : data_(s ? s : "") {}
+  String(const std::string& s) : data_(s) {}
   String(const String&) = default;
-  // Simple helpers used in code under test
-  String operator+(const String&) const { return String(""); }
-  String operator+(const char*) const { return String(""); }
-  String operator+(int) const { return String(""); }
-  const char* c_str() const { return ""; }
+  String& operator=(const String&) = default;
+
+  // Numeric constructors used in code under test
+  String(int v) : data_(std::to_string(v)) {}
+  String(unsigned int v) : data_(std::to_string(v)) {}
+  String(long v) : data_(std::to_string(v)) {}
+  String(unsigned long v) : data_(std::to_string(v)) {}
+
+  // Concatenation operators
+  String operator+(const String& rhs) const { return String(data_ + rhs.data_); }
+  String operator+(const char* rhs) const { return String(data_ + (rhs ? std::string(rhs) : std::string())); }
+  String operator+(int rhs) const { return String(data_ + std::to_string(rhs)); }
+
+  // Access
+  const char* c_str() const { return data_.c_str(); }
+
+private:
+  std::string data_;
 };
+
+// Support "literal" + String concatenation
+inline String operator+(const char* lhs, const String& rhs) {
+  return String(std::string(lhs ? lhs : "") + rhs.c_str());
+}

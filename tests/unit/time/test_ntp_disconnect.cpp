@@ -32,8 +32,8 @@ int main() {
   NTPClientPlus ntp(udp, "pool.ntp.org", utc_minutes, true);
 
   // Seed one successful NTP update: choose 1970-01-01 01:00:00 UTC
-  const unsigned long SEVENZYYEARS = 2208988800UL;
-  unsigned long t_seed = SEVENZYYEARS + 3600UL; // 1 hour after 1970 epoch
+  const unsigned long EPOCH_OFFSET_1900_TO_1970 = 2208988800UL;
+  unsigned long t_seed = EPOCH_OFFSET_1900_TO_1970 + 3600UL; // 1 hour after 1970 epoch
   uint8_t pkt[NTP_PACKET_SIZE];
   makeNtpPacket(pkt, t_seed);
 
