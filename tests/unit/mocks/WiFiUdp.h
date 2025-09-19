@@ -19,7 +19,8 @@ public:
     return incoming.empty() ? 0 : (int)incoming.front().size();
   }
   virtual void flush() {
-    if (!incoming.empty()) incoming.pop();
+    // Simulate clearing any pending received data
+    while (!incoming.empty()) incoming.pop();
   }
   virtual int read(uint8_t* buffer, size_t len) {
     if (incoming.empty()) return 0;
@@ -33,15 +34,30 @@ public:
   virtual void beginPacket(const IPAddress&, uint16_t) { /* ignore */ }
   virtual void beginPacket(uint32_t, uint16_t) { /* ignore */ }
   virtual size_t write(const uint8_t*, size_t) { return 0; }
-  virtual void endPacket() {}
+  virtual void endPacket() {
+    // When transmission finishes, deliver any prepared response to the incoming queue
+    if (has_prepared) {
+      incoming.emplace(prepared);
+      prepared.clear();
+      has_prepared = false;
+    }
+  }
 
-  // Test helper: enqueue a packet to be "received"
+  // Test helper: enqueue a packet to be "received" immediately
   void enqueuePacket(const uint8_t* data, size_t len) {
     incoming.emplace(std::string(reinterpret_cast<const char*>(data), len));
   }
 
+  // Test helper: prepare a packet that will be delivered upon endPacket()
+  void prepareIncoming(const uint8_t* data, size_t len) {
+    prepared.assign(reinterpret_cast<const char*>(data), len);
+    has_prepared = true;
+  }
+
 protected:
   std::queue<std::string> incoming;
+  std::string prepared;
+  bool has_prepared = false;
 };
 
 class WiFiUDP : public UDP {

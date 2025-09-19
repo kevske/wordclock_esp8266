@@ -39,9 +39,8 @@ int main() {
 
   udp.begin(1337);
 
-  // Ensure no stale packets are flushed before we try: queue AFTER any potential flushes.
-  // Directly call updateNTP (without setupNTPClient) so we control the queue timing.
-  udp.enqueuePacket(pkt, sizeof(pkt));
+  // Prepare the response so updateNTP()'s endPacket() will deliver it
+  udp.prepareIncoming(pkt, sizeof(pkt));
   int r = ntp.updateNTP();
   EXPECT_EQ(r, 0, "initial NTP update succeeds");
 
@@ -51,7 +50,7 @@ int main() {
   // Advance 5 seconds of mocked time without any incoming packets
   delay(5000);
 
-  // Simulate a failed update due to timeout (no packet enqueued)
+  // Simulate a failed update due to timeout (no packet prepared/enqueued)
   int r_fail = ntp.updateNTP();
   EXPECT_EQ(r_fail, -1, "updateNTP times out when no packet is received");
 
