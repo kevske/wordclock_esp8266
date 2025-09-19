@@ -424,7 +424,7 @@ void loop() {
   }
 
   // handle state behaviours (trigger loopCycles of different states depending on current state)
-  if(!nightMode && !ledOff && (millis() - lastStep > behaviorUpdatePeriod) && (millis() - lastLEDdirect > TIMEOUT_LEDDIRECT)){
+  if(!nightMode && !ledOff && !randomMessageActive && (millis() - lastStep > behaviorUpdatePeriod) && (millis() - lastLEDdirect > TIMEOUT_LEDDIRECT)){
     updateStateBehavior(currentState);    
     lastStep = millis();
   }
@@ -444,7 +444,7 @@ void loop() {
   handleButton();
 
   // handle state changes
-  if(stateAutoChange && (millis() - lastStateChange > PERIOD_STATECHANGE) && !nightMode && !ledOff){
+  if(stateAutoChange && (millis() - lastStateChange > PERIOD_STATECHANGE) && !nightMode && !ledOff && !randomMessageActive){
     // increment state variable and trigger state change
     stateChange((currentState + 1) % NUM_STATES, false);
     
