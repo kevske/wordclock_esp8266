@@ -417,9 +417,11 @@ void loop() {
     // Check wifi status (only if no apmode)
     if(!apmode && WiFi.status() != WL_CONNECTED){
       Serial.println("connection lost");
-      ledmatrix.gridAddPixel(0, 5, colors24bit[1]);
+      // Non-blocking indicator: briefly mark a pixel without delay-based blocking
+      ledmatrix.setMinIndicator(15, colors24bit[1]);
       ledmatrix.drawOnMatrixInstant();
-      delay(1000);
+      // Attempt a reconnect without blocking
+      WiFi.reconnect();
     }
   }
 
@@ -430,12 +432,12 @@ void loop() {
   }
 
   // Turn off LEDs if ledOff is true or nightmode is active
-  if((ledOff || nightMode) && !waitForTimeAfterReboot){
+  if((ledOff || nightMode)){
     ledmatrix.gridFlush();
   }
 
   // periodically write colors to matrix
-  if(millis() - lastAnimationStep > PERIOD_MATRIXUPDATE && !waitForTimeAfterReboot && (millis() - lastLEDdirect > TIMEOUT_LEDDIRECT)){
+  if(millis() - lastAnimationStep > PERIOD_MATRIXUPDATE && (millis() - lastLEDdirect > TIMEOUT_LEDDIRECT)){
     ledmatrix.drawOnMatrixSmooth(filterFactor);
     lastAnimationStep = millis();
   }
@@ -495,15 +497,24 @@ void loop() {
 
     logger.logString("Watchdog Counter: " + String(watchdogCounter));
     if(watchdogCounter <= 0){
-        logger.logString("Trigger restart due to watchdog...");
-        delay(100);
-        ESP.restart();
+        logger.logString("Watchdog threshold reached");
+        if (WiFi.status() != WL_CONNECTED) {
+          // If WiFi is down, prefer reconnect attempts over reboot loops
+          logger.logString("WiFi down; attempting reconnect instead of restart");
+          WiFi.reconnect();
+          watchdogCounter = 30; // reset watchdog to give reconnection time
+          lastNTPUpdate = millis(); // backoff until next NTP try
+        } else {
+          logger.logString("Trigger restart due to watchdog (WiFi connected)...");
+          delay(100);
+          ESP.restart();
+        }
     }
     
   }
 
   // check if nightmode need to be activated
-  if(millis() - lastNightmodeCheck > PERIOD_NIGHTMODECHECK && !waitForTimeAfterReboot){
+  if(millis() - lastNightmodeCheck > PERIOD_NIGHTMODECHECK){
     checkNightmode();
     lastNightmodeCheck = millis();
   }
@@ -750,97 +761,6 @@ void stateChange(uint8_t newState, bool persistant){
 }
 
 /**
- * @brief Handler for POST requests to /leddirect.
- * 
- * Allows the control of all LEDs from external source. 
- * It will overwrite the normal program for 5 seconds.
- * A 11x11 picture can be sent as base64 encoded string to be displayed on matrix.
- * 
- */
-void handleLEDDirect() {
-  if (server.method() != HTTP_POST) {
-    server.send(405, "text/plain", "Method Not Allowed");
-  } else {
-    String message = "POST data was:\n";
-    /*logger.logString(message);
-    delay(10);
-    for (uint8_t i = 0; i < server.args(); i++) {
-      message += " " + server.argName(i) + ": " + server.arg(i) + "\n";
-      logger.logString(server.arg(i));
-      delay(10);
-    }*/
-    if(server.args() == 1){
-      String data = String(server.arg(0));
-      int dataLength = data.length();
-      //char byteArray[dataLength];
-      //data.toCharArray(byteArray, dataLength);
-
-      // base64 decoding
-      char base64data[dataLength];
-      data.toCharArray(base64data, dataLength);
-      int base64dataLen = dataLength;
-      int decodedLength = Base64.decodedLength(base64data, base64dataLen);
-      char byteArray[decodedLength];
-      Base64.decode(byteArray, base64data, base64dataLen);
-
-      /*for(int i = 0; i < 10; i++){
-        logger.logString(String((int)(byteArray[i])));
-        delay(10);
-      }*/
-
-
-      for(int i = 0; i < dataLength; i += 4) {
-        uint8_t red = byteArray[i]; // red
-        uint8_t green = byteArray[i + 1]; // green
-        uint8_t blue = byteArray[i + 2]; // blue
-        ledmatrix.gridAddPixel((i/4) % WIDTH, (i/4) / HEIGHT, LEDMatrix::Color24bit(red, green, blue));
-      }
-      ledmatrix.drawOnMatrixInstant();
-
-      lastLEDdirect = millis();
-    }
-    server.send(200, "text/plain", message);
-  }
-}
-
-/**
- * @brief Check button commands
- * 
- */
-void handleButton(){
-  static bool lastButtonState = false;
-  bool buttonPressed = !digitalRead(BUTTONPIN);
-  // check rising edge
-  if(buttonPressed == true && lastButtonState == false){
-    // button press start
-    logger.logString("Button press started");
-    buttonPressStart = millis();
-  }
-  // check falling edge
-  if(buttonPressed == false && lastButtonState == true){
-    // button press ended
-    if((millis() - buttonPressStart) > LONGPRESS){
-      // longpress -> nightmode
-      logger.logString("Button press ended - longpress");
-
-      ledOff = true;
-    }
-    else if((millis() - buttonPressStart) > SHORTPRESS){
-      // shortpress -> state change 
-      logger.logString("Button press ended - shortpress");
-
-      if(ledOff){
-        ledOff = false;
-      }else{
-        stateChange((currentState + 1) % NUM_STATES, true);
-      }
-      
-    }
-  }
-  lastButtonState = buttonPressed;
-}
-
-/**
  * @brief Set main color
  * 
  */
@@ -923,6 +843,97 @@ void loadColorShiftStateFromEEPROM()
   logger.logString("ColorShiftSpeed: " + String(dynColorShiftSpeed));
   dynColorShiftActive = EEPROM.read(ADR_COLSHIFTACTIVE);
   logger.logString("ColorShiftActive: " + String(dynColorShiftActive));
+}
+
+/**
+ * @brief Handler for POST requests to /leddirect.
+ * 
+ * Allows the control of all LEDs from external source. 
+ * It will overwrite the normal program for 5 seconds.
+ * A 11x11 picture can be sent as base64 encoded string to be displayed on matrix.
+ * 
+ */
+void handleLEDDirect() {
+  if (server.method() != HTTP_POST) {
+    server.send(405, "text/plain", "Method Not Allowed");
+  } else {
+    String message = "POST data was:\n";
+    /*logger.logString(message);
+    delay(10);
+    for (uint8_t i = 0; i < server.args(); i++) {
+      message += " " + server.argName(i) + ": " + server.arg(i) + "\n";
+      logger.logString(server.arg(i));
+      delay(10);
+    }*/
+    if(server.args() == 1){
+      String data = String(server.arg(0));
+      int dataLength = data.length();
+      //char byteArray[dataLength];
+      //data.toCharArray(byteArray, dataLength);
+
+      // base64 decoding
+      char base64data[dataLength];
+      data.toCharArray(base64data, dataLength);
+      int base64dataLen = data.length();
+      int decodedLength = Base64.decodedLength(base64data, base64dataLen);
+      char byteArray[decodedLength];
+      Base64.decode(byteArray, base64data, base64dataLen);
+
+      /*for(int i = 0; i < 10; i++){
+        logger.logString(String((int)(byteArray[i])));
+        delay(10);
+      }*/
+
+
+      for(int i = 0; i < dataLength; i += 4) {
+        uint8_t red = byteArray[i]; // red
+        uint8_t green = byteArray[i + 1]; // green
+        uint8_t blue = byteArray[i + 2]; // blue
+        ledmatrix.gridAddPixel((i/4) % WIDTH, (i/4) / HEIGHT, LEDMatrix::Color24bit(red, green, blue));
+      }
+      ledmatrix.drawOnMatrixInstant();
+
+      lastLEDdirect = millis();
+    }
+    server.send(200, "text/plain", message);
+  }
+}
+
+/**
+ * @brief Check button commands
+ * 
+ */
+void handleButton(){
+  static bool lastButtonState = false;
+  bool buttonPressed = !digitalRead(BUTTONPIN);
+  // check rising edge
+  if(buttonPressed == true && lastButtonState == false){
+    // button press start
+    logger.logString("Button press started");
+    buttonPressStart = millis();
+  }
+  // check falling edge
+  if(buttonPressed == false && lastButtonState == true){
+    // button press ended
+    if((millis() - buttonPressStart) > LONGPRESS){
+      // longpress -> nightmode
+      logger.logString("Button press ended - longpress");
+
+      ledOff = true;
+    }
+    else if((millis() - buttonPressStart) > SHORTPRESS){
+      // shortpress -> state change 
+      logger.logString("Button press ended - shortpress");
+
+      if(ledOff){
+        ledOff = false;
+      }else{
+        stateChange((currentState + 1) % NUM_STATES, true);
+      }
+      
+    }
+  }
+  lastButtonState = buttonPressed;
 }
 
 /**
