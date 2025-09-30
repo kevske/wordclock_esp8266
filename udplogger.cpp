@@ -1,4 +1,5 @@
 #include "udplogger.h"
+#include <ESP8266WiFi.h>
 
 UDPLogger::UDPLogger(){
 
