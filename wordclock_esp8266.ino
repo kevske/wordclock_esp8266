@@ -423,6 +423,20 @@ void loop() {
       // Attempt a reconnect without blocking
       WiFi.reconnect();
     }
+
+    // Detect reconnection edge and refresh network-bound subsystems
+    static wl_status_t prevWiFiStatus = WL_DISCONNECTED;
+    wl_status_t currStatus = WiFi.status();
+    if (!apmode && prevWiFiStatus != currStatus && currStatus == WL_CONNECTED) {
+      Serial.println("WiFi reconnected; refreshing multicast logger and NTP client");
+      logger.refreshInterface(WiFi.localIP());
+      // Reinitialize NTP UDP binding to be safe after long outages
+      ntp.end();
+      ntp.setupNTPClient();
+      // Trigger a near-term NTP update
+      lastNTPUpdate = millis() - (PERIOD_NTPUPDATE - 1000);
+    }
+    prevWiFiStatus = currStatus;
   }
 
   // handle state behaviours (trigger loopCycles of different states depending on current state)
@@ -653,10 +667,10 @@ void updateStateBehavior(uint8_t state){
  * 
  */
 void checkNightmode(){
-  logger.logString("Check nightmode");
   int hours = ntp.getHours24();
   int minutes = ntp.getMinutes();
   
+  bool previousNightMode = nightMode;
   nightMode = false; // Initial assumption
 
   // Convert all times to minutes for easier comparison
@@ -667,13 +681,16 @@ void checkNightmode(){
   if (startInMinutes < endInMinutes && nightModeActivated) { // Same day scenario
       if (startInMinutes < currentTimeInMinutes && currentTimeInMinutes < endInMinutes) {
           nightMode = true;
-          logger.logString("Nightmode active");
       }
   } else if (startInMinutes > endInMinutes && nightModeActivated) { // Overnight scenario
       if (currentTimeInMinutes >= startInMinutes || currentTimeInMinutes < endInMinutes) {
           nightMode = true;
-          logger.logString("Nightmode active");
       }
+  }
+
+  // Log only on state change to reduce string churn
+  if (nightMode != previousNightMode) {
+    logger.logString(String("Nightmode ") + (nightMode ? "active" : "inactive"));
   }
 }
 
@@ -1028,7 +1045,7 @@ void handleCommand() {
     ledmatrix.setBrightness(brightness);
     lastNightmodeCheck = millis()  - PERIOD_NIGHTMODECHECK;
   }
-  else if (server.argName(0) == "resetwifi"){
+  else if(server.argName(0) == "resetwifi"){
     wifiManager.resetSettings();
     // run LED test.
     for(int r = 0; r < HEIGHT; r++){

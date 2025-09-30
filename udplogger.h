@@ -24,6 +24,7 @@ class UDPLogger{
         void setName(String name);
         void logString(String logmessage);
         void logColor24bit(uint32_t color);
+        void refreshInterface(IPAddress interfaceAddr);
     private:
         String _name;
         IPAddress _multicastAddr;
