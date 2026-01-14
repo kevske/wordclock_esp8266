@@ -83,7 +83,7 @@
 #define PERIOD_NIGHTMODECHECK 20000
 
 #define SHORTPRESS 100
-#define LONGPRESS 2000
+#define LONGPRESS 3000
 
 #define CURRENT_LIMIT_LED 2500 // limit the total current sonsumed by LEDs (mA)
 
@@ -938,10 +938,10 @@ void handleButton(){
   if(buttonPressed == false && lastButtonState == true){
     // button press ended
     if((millis() - buttonPressStart) > LONGPRESS){
-      // longpress -> nightmode
-      logger.logString("Button press ended - longpress");
-
-      ledOff = true;
+      // longpress -> reset
+      logger.logString("Button press ended - longpress (RESET)");
+      delay(100);
+      ESP.restart();
     }
     else if((millis() - buttonPressStart) > SHORTPRESS){
       // shortpress -> state change 
