@@ -502,13 +502,13 @@ void Tetris::checkFullLines() {
             for (x = 0; x < WIDTH; x++) {
                 _field.pix[x][y] = 0;
                 printField();
-                delay(100);
+                delay(20);
             }
             // Move all upper rows down by one
             moveFieldDownOne(y);
             y++; minY++;
             printField();
-            delay(100);
+            delay(20);
 
 
             _nbRowsThisLevel++; _nbRowsTotal++;

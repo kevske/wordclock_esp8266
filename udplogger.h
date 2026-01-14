@@ -26,6 +26,7 @@ class UDPLogger{
         UDPLogger(IPAddress interfaceAddr, IPAddress multicastAddr, int port);
         void setName(String name);
         void logString(String logmessage);
+        void logPrintf(const char* format, ...);
         void logColor24bit(uint32_t color);
         void refreshInterface(IPAddress interfaceAddr);
     private:

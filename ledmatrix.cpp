@@ -287,8 +287,9 @@ uint16_t LEDMatrix::calcEstimatedLEDCurrent(uint32_t color){
   // Linear estimation: 20mA for full brightness per LED 
   // (calculation avoids float numbers)
   uint32_t estimatedCurrent = (20 * red) + (20 * green) + (20 * blue);
-  estimatedCurrent /= 255;
-  estimatedCurrent = (estimatedCurrent * brightness)/255;
+  // Approximation: / 256 instead of / 255
+  estimatedCurrent = estimatedCurrent >> 8; 
+  estimatedCurrent = (estimatedCurrent * brightness) >> 8;
 
   return estimatedCurrent;
 }

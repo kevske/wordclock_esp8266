@@ -670,3 +670,69 @@ bool NTPClientPlus::updateSWChange()
 
     return summertimeActive;
 }
+
+/**
+ * @brief Sends an NTP request packet non-blocking
+ * 
+ */
+void NTPClientPlus::sendRequest()
+{
+    this->_requestPending = true;
+    this->_requestTime = millis();
+    
+    // flush any existing packets
+    while (this->_udp->parsePacket() != 0)
+        this->_udp->flush();
+
+    this->sendNTPPacket();
+}
+
+/**
+ * @brief Checks for NTP response
+ * 
+ * @return 0     success
+ * @return 99    pending (still waiting)
+ * @return -1    timeout
+ * @return 1     too much difference
+ * @return 2     invalid time
+ */
+int NTPClientPlus::checkResponse()
+{
+    if (!this->_requestPending) return 0; // Or some other code for "idle"
+
+    int cb = this->_udp->parsePacket();
+    if (cb == 0) {
+        if (millis() - this->_requestTime > 1500) { // 1.5s timeout
+            this->_requestPending = false;
+            return -1; // Timeout
+        }
+        return 99; // Still waiting
+    }
+
+    this->_udp->read(this->_packetBuffer, NTP_PACKET_SIZE);
+
+    unsigned long highWord = word(this->_packetBuffer[40], this->_packetBuffer[41]);
+    unsigned long lowWord = word(this->_packetBuffer[42], this->_packetBuffer[43]);
+    unsigned long tempSecsSince1900 = highWord << 16 | lowWord;
+
+    if(tempSecsSince1900 < SEVENZYYEARS){
+        this->_requestPending = false;
+        return 2; // NTP time not valid
+    }
+
+    // check if time off last ntp update is roughly in the same range: 100sec apart (validation check)
+    // validation check can be skipped if this is the first update
+    if(this->_lastSecsSince1900 == 0 || tempSecsSince1900 - this->_lastSecsSince1900 < 100000){
+        this->_lastUpdate = millis(); // Approx time received
+        this->_secsSince1900 = tempSecsSince1900;
+        this->_currentEpoc = this->_secsSince1900 - SEVENZYYEARS;
+        this->_lastSecsSince1900 = tempSecsSince1900;
+        this->_requestPending = false;
+        return 0; // success
+    }
+    else{
+        this->_lastSecsSince1900 = tempSecsSince1900;
+        this->_requestPending = false;
+        return 1; // too much diff
+    }
+}

@@ -207,6 +207,7 @@ uint8_t nightModeEndMin = 0;
 int watchdogCounter = 30;
 
 bool waitForTimeAfterReboot = false; // wait for time update after reboot
+bool ntpRequestSent = false;         // stores if ntp request is pending
 
 // ----------------------------------------------------------------------------------
 //                                        SETUP
@@ -392,7 +393,8 @@ void loop() {
 
   // send regularly heartbeat messages via UDP multicast
   if(millis() - lastheartbeat > PERIOD_HEARTBEAT){
-    { // Use snprintf to avoid String heap fragmentation\r\n      char heartbeatBuf[120];\r\n      snprintf(heartbeatBuf, sizeof(heartbeatBuf), "Heartbeat, state: %s, FreeHeap: %u, HeapFrag: %u, MaxFreeBlock: %u",\r\n               stateNames[currentState].c_str(), ESP.getFreeHeap(), ESP.getHeapFragmentation(), ESP.getMaxFreeBlockSize());\r\n      logger.logString(heartbeatBuf);\r\n    }
+    logger.logPrintf("Heartbeat, state: %s, FreeHeap: %u, HeapFrag: %u, MaxFreeBlock: %u",
+             stateNames[currentState].c_str(), ESP.getFreeHeap(), ESP.getHeapFragmentation(), ESP.getMaxFreeBlockSize());
     lastheartbeat = millis();
 
     // Check wifi status (only if no apmode)
@@ -450,62 +452,72 @@ void loop() {
   }
 
   // NTP time update
-  if(millis() - lastNTPUpdate > PERIOD_NTPUPDATE){
-    int res = ntp.updateNTP();
-    if(res == 0){
-      ntp.calcDate();
-      logger.logString("NTP-Update successful");
-      logger.logString("Time: " +  ntp.getFormattedTime());
-      logger.logString("Date: " +  ntp.getFormattedDate());
-      logger.logString("Day of Week (Mon=1, Sun=7): " +  String(ntp.getDayOfWeek()));
-      logger.logString("Summertime: " + String(ntp.updateSWChange()));
-      lastNTPUpdate = millis();
-      watchdogCounter = 30;
-      checkNightmode();
-      if(waitForTimeAfterReboot && !nightMode){
-        // update mode (e.g. write the current time onto the matrix) first time after reboot
-        entryAction(currentState);
-        updateStateBehavior(currentState);
-        ledmatrix.drawOnMatrixInstant();
-      }
-      waitForTimeAfterReboot = false;
-    }
-    else if(res == -1){
-      logger.logString("NTP-Update not successful. Reason: Timeout");
-      lastNTPUpdate += 10000;
-      watchdogCounter--;
-    }
-    else if(res == 1){
-      logger.logString("NTP-Update not successful. Reason: Too large time difference");
-      logger.logString("Time: " +  ntp.getFormattedTime());
-      logger.logString("Date: " +  ntp.getFormattedDate());
-      logger.logString("Day of Week (Mon=1, Sun=7): " +  String(ntp.getDayOfWeek()));
-      logger.logString("Summertime: " + String(ntp.updateSWChange()));
-      lastNTPUpdate += 10000;
-      watchdogCounter--;
-    }
-    else {
-      logger.logString("NTP-Update not successful. Reason: NTP time not valid (<1970)");
-      lastNTPUpdate += 10000;
-      watchdogCounter--;
-    }
+  if(!ntpRequestSent && (millis() - lastNTPUpdate > PERIOD_NTPUPDATE)){
+    ntp.sendRequest();
+    ntpRequestSent = true;
+  }
 
-    logger.logString("Watchdog Counter: " + String(watchdogCounter));
-    if(watchdogCounter <= 0){
-        logger.logString("Watchdog threshold reached");
-        if (WiFi.status() != WL_CONNECTED) {
-          // If WiFi is down, prefer reconnect attempts over reboot loops
-          logger.logString("WiFi down; attempting reconnect instead of restart");
-          WiFi.reconnect();
-          watchdogCounter = 30; // reset watchdog to give reconnection time
-          lastNTPUpdate = millis(); // backoff until next NTP try
-        } else {
-          logger.logString("Trigger restart due to watchdog (WiFi connected)...");
-          delay(100);
-          ESP.restart();
-        }
-    }
+  if(ntpRequestSent){
+    int res = ntp.checkResponse();
     
+    // res values: 0=success, 99=pending, -1=timeout, 1=diff too large, 2=invalid
+    if(res != 99){ 
+      ntpRequestSent = false;
+      
+      if(res == 0){
+        ntp.calcDate();
+        logger.logString("NTP-Update successful");
+        logger.logPrintf("Time: %s", ntp.getFormattedTime().c_str());
+        logger.logPrintf("Date: %s", ntp.getFormattedDate().c_str());
+        logger.logPrintf("Day of Week (Mon=1, Sun=7): %u", ntp.getDayOfWeek());
+        logger.logPrintf("Summertime: %d", ntp.updateSWChange());
+        lastNTPUpdate = millis();
+        watchdogCounter = 30;
+        checkNightmode();
+        if(waitForTimeAfterReboot && !nightMode){
+          // update mode (e.g. write the current time onto the matrix) first time after reboot
+          entryAction(currentState);
+          updateStateBehavior(currentState);
+          ledmatrix.drawOnMatrixInstant();
+        }
+        waitForTimeAfterReboot = false;
+      }
+      else if(res == -1){
+        logger.logString("NTP-Update not successful. Reason: Timeout");
+        lastNTPUpdate += 10000;
+        watchdogCounter--;
+      }
+      else if(res == 1){
+        logger.logString("NTP-Update not successful. Reason: Too large time difference");
+        logger.logString("Time: " +  ntp.getFormattedTime());
+        logger.logString("Date: " +  ntp.getFormattedDate());
+        logger.logString("Day of Week (Mon=1, Sun=7): " +  String(ntp.getDayOfWeek()));
+        logger.logString("Summertime: " + String(ntp.updateSWChange()));
+        lastNTPUpdate += 10000;
+        watchdogCounter--;
+      }
+      else {
+        logger.logString("NTP-Update not successful. Reason: NTP time not valid (<1970)");
+        lastNTPUpdate += 10000;
+        watchdogCounter--;
+      }
+  
+      logger.logString("Watchdog Counter: " + String(watchdogCounter));
+      if(watchdogCounter <= 0){
+          logger.logString("Watchdog threshold reached");
+          if (WiFi.status() != WL_CONNECTED) {
+            // If WiFi is down, prefer reconnect attempts over reboot loops
+            logger.logString("WiFi down; attempting reconnect instead of restart");
+            WiFi.reconnect();
+            watchdogCounter = 30; // reset watchdog to give reconnection time
+            lastNTPUpdate = millis(); // backoff until next NTP try
+          } else {
+            logger.logString("Trigger restart due to watchdog (WiFi connected)...");
+            delay(100);
+            ESP.restart();
+          }
+      }
+    }
   }
 
   // check if nightmode need to be activated

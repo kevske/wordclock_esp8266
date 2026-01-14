@@ -38,7 +38,9 @@ class NTPClientPlus{
         int getMonth(int dayOfYear);
         bool updateSWChange();
 
-
+        void sendRequest();
+        int checkResponse();
+        
     private:
         UDP*          _udp;
         bool          _udpSetup       = false;
@@ -61,6 +63,8 @@ class NTPClientPlus{
         unsigned int _dateDay          = 0;
         unsigned int _dayOfWeek        = 0;
 
+        unsigned long _requestTime = 0;
+        bool          _requestPending = false;
 
         byte          _packetBuffer[NTP_PACKET_SIZE];
         void          sendNTPPacket();
