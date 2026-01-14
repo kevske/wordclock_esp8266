@@ -228,7 +228,12 @@ void LEDMatrix::drawOnMatrix(float factor){
  * @param number number to display
  * @param color color to display (24bit)
  */
-void LEDMatrix::printNumber(uint8_t xpos, uint8_t ypos, uint8_t number, uint32_t color)\r\n{\r\n  // Bounds check: number must be 0-9, positions must fit in grid\r\n  if(number > 9 || xpos + 3 > WIDTH || ypos + 5 > HEIGHT) return;\r\n  \r\n  for(int y=ypos, i = 0; y < (ypos+5); y++, i++){
+void LEDMatrix::printNumber(uint8_t xpos, uint8_t ypos, uint8_t number, uint32_t color)
+{
+  // Bounds check: number must be 0-9, positions must fit in grid
+  if(number > 9 || xpos + 3 > WIDTH || ypos + 5 > HEIGHT) return;
+  
+  for(int y=ypos, i = 0; y < (ypos+5); y++, i++){
     for(int x=xpos, k = 2; x < (xpos+3); x++, k--){
       if((numbers_font[number][i] >> k) & 0x1){
         gridAddPixel(x, y, color);
@@ -245,7 +250,12 @@ void LEDMatrix::printNumber(uint8_t xpos, uint8_t ypos, uint8_t number, uint32_t
  * @param character character to display
  * @param color color to display (24bit)
  */
-void LEDMatrix::printChar(uint8_t xpos, uint8_t ypos, char character, uint32_t color)\r\n{\r\n  // Bounds check: positions must fit in grid\r\n  if(xpos + 3 > WIDTH || ypos + 5 > HEIGHT) return;\r\n  \r\n  int id = 0;
+void LEDMatrix::printChar(uint8_t xpos, uint8_t ypos, char character, uint32_t color)
+{
+  // Bounds check: positions must fit in grid
+  if(xpos + 3 > WIDTH || ypos + 5 > HEIGHT) return;
+  
+  int id = 0;
   if(character == 'I'){
     id = 0;
   }

@@ -329,7 +329,9 @@ int showStringOnClock(String message, uint32_t color){
 String timeToString(uint8_t hours,uint8_t minutes){
   
   //ES IST
-  String message;\r\n  message.reserve(50); // Pre-allocate to avoid heap fragmentation\r\n  message = "ES IST ";
+  String message;
+  message.reserve(50); // Pre-allocate to avoid heap fragmentation
+  message = "ES IST ";
 
   
   //show minutes
