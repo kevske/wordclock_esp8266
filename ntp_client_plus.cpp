@@ -235,6 +235,20 @@ String NTPClientPlus::getFormattedDate() {
  */
 void NTPClientPlus::calcDate()
 {
+    // Cache optimization: only recalculate if the day has changed
+    // Check if current epoch is on the same day as last calculation
+    unsigned long currentEpoch = this->getEpochTime();
+    unsigned long currentDay = currentEpoch / secondperday;
+    unsigned long lastCalcDay = this->_lastDateCalcEpoch / secondperday;
+    
+    if (this->_lastDateCalcEpoch != 0 && currentDay == lastCalcDay) {
+        // Same day, no need to recalculate date - just update day of week in case needed
+        return;
+    }
+    
+    // Update cache timestamp
+    this->_lastDateCalcEpoch = currentEpoch;
+    
     // Start: Calc date
 
     // get days since 1900

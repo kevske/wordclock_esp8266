@@ -660,7 +660,8 @@ void checkNightmode(){
   int endInMinutes = nightModeEndHour * 60 + nightModeEndMin;
 
   if (startInMinutes < endInMinutes && nightModeActivated) { // Same day scenario
-      if (startInMinutes < currentTimeInMinutes && currentTimeInMinutes < endInMinutes) {
+      // Use <= for start to include the exact start minute, < for end to exclude exact end minute
+      if (startInMinutes <= currentTimeInMinutes && currentTimeInMinutes < endInMinutes) {
           nightMode = true;
       }
   } else if (startInMinutes > endInMinutes && nightModeActivated) { // Overnight scenario

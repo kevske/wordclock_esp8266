@@ -1,11 +1,29 @@
 const String clockStringGerman =  "ESHISTPZEHNHALBZWANZIGRNFUNFQKJMSATVIERTELAASONACHXVORRSNTCDREIBLANISIEBENLEHEACHTELFUNFRZWOLFUVIERSECHSZWEINSZEHNEUNKUHR";
 
+// Lookup table for minute indicator patterns: maps (minutes % 5) to LED pattern
+// Pattern is binary: 0b1000 = first LED, 0b1100 = first two, etc.
+static const uint8_t minutePatterns[5] = {0b0000, 0b1000, 0b1100, 0b1110, 0b1111};
+static const uint8_t singleLedPatterns[5] = {0b0000, 0b1000, 0b0100, 0b0010, 0b0001};
+
 /**
- * @brief control the four minute indicator LEDs
+ * @brief Helper function for special time range minute indicators (25-30, 35-40)
+ * Sets all LEDs to base color, then highlights one LED in white based on minutes
  * 
- * @param minutes minutes to be displayed [0 ... 59]
- * @param color 24bit color value
+ * @param minutes current minutes value
+ * @param baseColor background color for all 4 LEDs
+ * @param highlightColor color for the highlighted LED (typically white)
  */
+void setSpecialMinuteIndicator(uint8_t minutes, uint32_t baseColor, uint32_t highlightColor) {
+  // Set all LEDs to the base color
+  ledmatrix.setMinIndicator(0b1111, baseColor);
+  
+  // Highlight the appropriate LED based on minutes % 5
+  uint8_t minuteMod = minutes % 5;
+  if (minuteMod > 0) {
+    ledmatrix.setMinIndicator(singleLedPatterns[minuteMod], highlightColor);
+  }
+}
+
 /**
  * @brief control the four minute indicator LEDs
  * 
@@ -13,103 +31,27 @@ const String clockStringGerman =  "ESHISTPZEHNHALBZWANZIGRNFUNFQKJMSATVIERTELAAS
  * @param color 24bit color value
  */
 void drawMinuteIndicator(uint8_t minutes, uint32_t color){
-  //separate LEDs for minutes in an additional row
   // Define colors for special conditions
-  uint32_t greenColor = 0x00FF00;  // Green color
-  uint32_t redColor = 0xFF0000;    // Red color
-  uint32_t whiteColor = 0xFFFFFF;  // White color
-  uint32_t baseColor = color;      // Default color
+  const uint32_t greenColor = 0x00FF00;
+  const uint32_t redColor = 0xFF0000;
+  const uint32_t whiteColor = 0xFFFFFF;
 
-  // For special conditions, set all LEDs to base color first
-  if ((minutes >= 25 && minutes < 30)) {
-    // Set all LEDs to the base color
-    baseColor = greenColor;
-    ledmatrix.setMinIndicator(0b1111, baseColor);
-    
-    // Then handle the white LED based on minutes % 5
-    switch (minutes % 5) {
-      case 0:
-        // All LEDs are base color
-        break;
-          
-      case 1:
-        // First LED is white, others remain base color
-        ledmatrix.setMinIndicator(0b1000, whiteColor);
-        break;
-
-      case 2:
-        // Second LED is white, others remain base color
-        ledmatrix.setMinIndicator(0b0100, whiteColor);
-        break;
-
-      case 3:
-        // Third LED is white, others remain base color
-        ledmatrix.setMinIndicator(0b0010, whiteColor);
-        break;
-
-      case 4:
-        // Fourth LED is white, others remain base color
-        ledmatrix.setMinIndicator(0b0001, whiteColor);
-        break;
-    }
+  // Special time ranges with colored backgrounds
+  if (minutes >= 25 && minutes < 30) {
+    // Green background with white highlight for 25-29 minutes
+    setSpecialMinuteIndicator(minutes, greenColor, whiteColor);
   }
-  else if ((minutes >= 35 && minutes < 40)) {
-// Set all LEDs to the base color
-     baseColor = redColor;          // All red for 35-40 minutes
-
-    ledmatrix.setMinIndicator(0b1111, baseColor);
-    
-    // Then handle the white LED based on minutes % 5
-    switch (minutes % 5) {
-      case 0:
-        // All LEDs are base color
-        break;
-          
-      case 1:
-        // First LED is white, others remain base color
-        ledmatrix.setMinIndicator(0b1000, whiteColor);
-        break;
-
-      case 2:
-        // Second LED is white, others remain base color
-        ledmatrix.setMinIndicator(0b0100, whiteColor);
-        break;
-
-      case 3:
-        // Third LED is white, others remain base color
-        ledmatrix.setMinIndicator(0b0010, whiteColor);
-        break;
-
-      case 4:
-        // Fourth LED is white, others remain base color
-        ledmatrix.setMinIndicator(0b0001, whiteColor);
-        break;
-    }
-    
+  else if (minutes >= 35 && minutes < 40) {
+    // Red background with white highlight for 35-39 minutes
+    setSpecialMinuteIndicator(minutes, redColor, whiteColor);
   }
   else {
-    // Normal behavior for other time ranges
-    switch (minutes % 5) { 
-      case 0:
-        break;
-          
-      case 1:
-        ledmatrix.setMinIndicator(0b1000, color);
-        break;
-
-      case 2:
-        ledmatrix.setMinIndicator(0b1100, color);
-        break;
-
-      case 3:
-        ledmatrix.setMinIndicator(0b1110, color);
-        break;
-
-      case 4:
-        ledmatrix.setMinIndicator(0b1111, color);
-        break;
+    // Normal behavior: progressive LED fill based on minutes % 5
+    uint8_t minuteMod = minutes % 5;
+    if (minuteMod > 0) {
+      ledmatrix.setMinIndicator(minutePatterns[minuteMod], color);
     }
-  }  
+  }
 }
 
 /**

@@ -37,7 +37,8 @@ void UDPLogger::logString(String logmessage){
         return;
     }
     _Udp.beginPacketMulticast(_multicastAddr, _port, _interfaceAddr);
-    logmessage.toCharArray(_packetBuffer, 100);
+    // Truncate message if too long, using the defined buffer size
+    logmessage.toCharArray(_packetBuffer, UDP_LOG_BUFFER_SIZE);
     _Udp.print(_packetBuffer);
     _Udp.endPacket();
     _lastSend=millis();

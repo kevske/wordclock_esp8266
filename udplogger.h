@@ -16,6 +16,9 @@
 #include <WiFiUdp.h>
 
 
+// Buffer size for UDP log packets - increased from 100 to prevent truncation
+#define UDP_LOG_BUFFER_SIZE 256
+
 class UDPLogger{
 
     public:
@@ -31,7 +34,7 @@ class UDPLogger{
         IPAddress _interfaceAddr;
         int _port;
         WiFiUDP _Udp;
-        char _packetBuffer[100];
+        char _packetBuffer[UDP_LOG_BUFFER_SIZE];
         unsigned long _lastSend;
 };
 
