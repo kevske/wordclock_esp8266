@@ -1167,7 +1167,7 @@ void handleCommand() {
     else nightModeActivated = false;
     EEPROM.write(ADR_NM_ACTIVATED, nightModeActivated);
     EEPROM.commit();
-    checkNightmode();
+    updateBrightnessAndNightMode();
   }
   else if(server.argName(0) == "setting"){
     String timestr = server.arg(0) + "-";

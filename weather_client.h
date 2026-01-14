@@ -16,7 +16,6 @@ class WeatherClient {
 
   private:
     float tempTodayNoon;
-    float tempTodayNoon;
     float tempTomorrowNoon;
     int codeTodayNoon;
     int codeTomorrowNoon;
