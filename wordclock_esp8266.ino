@@ -251,26 +251,7 @@ void setup() {
   // // set a custom hostname
   // wifiManager.setHostname(hostname);
   
-  // fetches ssid and pass from eeprom and tries to connect
-  // if it does not connect it starts an access point with the specified name
-  // here "wordclockAP"
-  // and goes into a blocking loop awaiting configuration
-  wifiManager.autoConnect(AP_SSID);
-
-  // if you get here you have connected to the WiFi
-  Serial.println("Connected.");
-  Serial.println("IP address: ");
-  Serial.println(WiFi.localIP()); 
-
-  if(ESP.getResetReason().equals("Power On") || ESP.getResetReason().equals("External System")){
-    // Turn off minutes leds
-    ledmatrix.setMinIndicator(15, 0);
-    ledmatrix.drawOnMatrixInstant();
-  }
-
-   
-  
-  /** (alternative) Use directly STA/AP Mode of ESP8266   **/
+  // Using direct STA/AP Mode instead of WiFiManager for better control\r\n  // This provides visual feedback during connection and fallback to AP mode
   
   
   // We start by connecting to a WiFi network
@@ -411,7 +392,7 @@ void loop() {
 
   // send regularly heartbeat messages via UDP multicast
   if(millis() - lastheartbeat > PERIOD_HEARTBEAT){
-    logger.logString("Heartbeat, state: " + stateNames[currentState] + ", FreeHeap: " + ESP.getFreeHeap() + ", HeapFrag: " + ESP.getHeapFragmentation() + ", MaxFreeBlock: " + ESP.getMaxFreeBlockSize() + "\n");
+    { // Use snprintf to avoid String heap fragmentation\r\n      char heartbeatBuf[120];\r\n      snprintf(heartbeatBuf, sizeof(heartbeatBuf), "Heartbeat, state: %s, FreeHeap: %u, HeapFrag: %u, MaxFreeBlock: %u",\r\n               stateNames[currentState].c_str(), ESP.getFreeHeap(), ESP.getHeapFragmentation(), ESP.getMaxFreeBlockSize());\r\n      logger.logString(heartbeatBuf);\r\n    }
     lastheartbeat = millis();
 
     // Check wifi status (only if no apmode)
@@ -827,10 +808,10 @@ void loadNightmodeSettingsFromEEPROM()
   nightModeEndHour = EEPROM.read(ADR_NM_END_H);
   nightModeEndMin = EEPROM.read(ADR_NM_END_M);
   nightModeActivated = EEPROM.read(ADR_NM_ACTIVATED);
-  if(nightModeStartHour < 0 || nightModeStartHour > 23) nightModeStartHour = 22;
-  if(nightModeStartMin < 0 || nightModeStartMin > 59) nightModeStartMin = 0;
-  if(nightModeEndHour < 0 || nightModeEndHour > 23) nightModeEndHour = 7;
-  if(nightModeEndMin < 0 || nightModeEndMin > 59) nightModeEndMin = 0;
+  if(nightModeStartHour > 23) nightModeStartHour = 22;
+  if(nightModeStartMin > 59) nightModeStartMin = 0;
+  if(nightModeEndHour > 23) nightModeEndHour = 7;
+  if(nightModeEndMin > 59) nightModeEndMin = 0;
   logger.logString("Nightmode activated: " + String(nightModeActivated));
   logger.logString("Nightmode starts at: " + String(nightModeStartHour) + ":" + String(nightModeStartMin));
   logger.logString("Nightmode ends at: " + String(nightModeEndHour) + ":" + String(nightModeEndMin));
@@ -885,24 +866,31 @@ void handleLEDDirect() {
     if(server.args() == 1){
       String data = String(server.arg(0));
       int dataLength = data.length();
-      //char byteArray[dataLength];
-      //data.toCharArray(byteArray, dataLength);
+      
+      // Validate input size to prevent stack overflow (max 11x11 pixels * 4 bytes + base64 overhead)
+      const int MAX_BASE64_SIZE = 800;
+      if(dataLength > MAX_BASE64_SIZE || dataLength == 0) {
+        server.send(400, "text/plain", "Invalid data size");
+        return;
+      }
 
-      // base64 decoding
-      char base64data[dataLength];
-      data.toCharArray(base64data, dataLength);
-      int base64dataLen = data.length();
-      int decodedLength = Base64.decodedLength(base64data, base64dataLen);
-      char byteArray[decodedLength];
-      Base64.decode(byteArray, base64data, base64dataLen);
+      // base64 decoding with bounded buffer
+      char base64data[MAX_BASE64_SIZE + 1];
+      data.toCharArray(base64data, dataLength + 1);
+      int decodedLength = Base64.decodedLength(base64data, dataLength);
+      
+      // Validate decoded size
+      const int MAX_DECODED_SIZE = 600; // 11x11x4 = 484 + margin
+      if(decodedLength > MAX_DECODED_SIZE || decodedLength < 4) {
+        server.send(400, "text/plain", "Invalid decoded size");
+        return;
+      }
+      
+      char byteArray[MAX_DECODED_SIZE];
+      Base64.decode(byteArray, base64data, dataLength);
 
-      /*for(int i = 0; i < 10; i++){
-        logger.logString(String((int)(byteArray[i])));
-        delay(10);
-      }*/
-
-
-      for(int i = 0; i < dataLength; i += 4) {
+      // Use decodedLength (not dataLength) to iterate through decoded bytes
+      for(int i = 0; i < decodedLength; i += 4) {
         uint8_t red = byteArray[i]; // red
         uint8_t green = byteArray[i + 1]; // green
         uint8_t blue = byteArray[i + 2]; // blue
@@ -1025,10 +1013,10 @@ void handleCommand() {
     nightModeEndMin = split(timestr, '-', 3).toInt();
     brightness = split(timestr, '-', 4).toInt();
     dynColorShiftSpeed = split(timestr, '-', 5).toInt();
-    if(nightModeStartHour < 0 || nightModeStartHour > 23) nightModeStartHour = 22;
-    if(nightModeStartMin < 0 || nightModeStartMin > 59) nightModeStartMin = 0;
-    if(nightModeEndHour < 0 || nightModeEndHour > 23) nightModeEndHour = 7;
-    if(nightModeEndMin < 0 || nightModeEndMin > 59) nightModeEndMin = 0;
+    if(nightModeStartHour > 23) nightModeStartHour = 22;
+    if(nightModeStartMin > 59) nightModeStartMin = 0;
+    if(nightModeEndHour > 23) nightModeEndHour = 7;
+    if(nightModeEndMin > 59) nightModeEndMin = 0;
     if(brightness < 10) brightness = 10;
     if(dynColorShiftSpeed == 0) dynColorShiftSpeed = 1;
     EEPROM.write(ADR_NM_START_H, nightModeStartHour);
@@ -1218,3 +1206,4 @@ String leadingZero2Digit(int value){
   msg += String(value);
   return msg;
 }
+

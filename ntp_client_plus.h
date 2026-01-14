@@ -66,6 +66,9 @@ class NTPClientPlus{
         void          sendNTPPacket();
         void          setSummertime(bool summertime);
         
+        // Cached date calculation to avoid recalculating every call
+        unsigned long _lastDateCalcEpoch = 0;  // Epoch time when date was last calculated
+        
 
         static const unsigned long secondperday = 86400;
         static const unsigned long secondperhour = 3600;

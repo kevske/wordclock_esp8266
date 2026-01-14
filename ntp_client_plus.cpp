@@ -279,23 +279,12 @@ void NTPClientPlus::calcDate()
     }
     this->_dateDay = dayOfYear - this->_dateDay;
 
-    // calc day of week:
+    // calc day of week using modular arithmetic (O(1) instead of O(n) loop)
     // Monday = 1, Tuesday = 2, Wednesday = 3, Thursday = 4, Friday = 5, Saturday = 6, Sunday = 7
-    // 1. Januar 1900 was a monday
-    this->_dayOfWeek = 1;
-
-    for (unsigned long i = 0; i < days1900; i++)
-    {
-
-        if (this->_dayOfWeek < 7)
-        {
-            this->_dayOfWeek = this->_dayOfWeek + 1;
-        }
-        else
-        {
-            this->_dayOfWeek = 1;
-        }
-    }
+    // 1. January 1900 was a Monday (day 1)
+    // days1900 is 0-indexed (day 0 = Jan 1, 1900 = Monday)
+    // So: (0 % 7) + 1 = 1 (Monday), (1 % 7) + 1 = 2 (Tuesday), etc.
+    this->_dayOfWeek = (days1900 % 7) + 1;
 
     // End: Calc date (dateDay, dateMonth, dateYear)
 
@@ -321,45 +310,34 @@ unsigned int NTPClientPlus::getDayOfWeek()
  */
 unsigned int NTPClientPlus::getYear()
 {
-
     unsigned long sec1900 = this->getSecsSince1900();
+    unsigned long days1900 = sec1900 / this->secondperday;
 
-    //NTP starts at 1. Jan 1900
-    unsigned int result = 1900;
-    unsigned int dayInYear = 0;
-    unsigned int days = 0;
-    unsigned int days1900 = 0;
-
-    unsigned long for_i = 0;
-    bool leapYear = LOW;
-
-    days1900 = sec1900 / this->secondperday;
-
-    for (for_i = 0; for_i < days1900; for_i++)
-    {
-
-        leapYear = this->isLeapYear(result);
-
-        if (leapYear)
-        {
-            dayInYear = 366;
-        }
-
-        else
-        {
-            dayInYear = 365;
-        }
-
-        days++;
-
-        if (days >= dayInYear)
-        {
-            result++;
-            days = 0;
-        }
+    // Optimization: Start from 2020 instead of 1900 to reduce iterations
+    // Days from Jan 1, 1900 to Jan 1, 2020: 43829 days (includes leap years)
+    // 2020 is a known leap year, starts on Wednesday
+    const unsigned int BASE_YEAR = 2020;
+    const unsigned long DAYS_UNTIL_2020 = 43829UL; // Precomputed: days from 1900 to 2020
+    
+    if (days1900 < DAYS_UNTIL_2020) {
+        // Fallback for dates before 2020 (unlikely for a clock)
+        // Use simple approximation
+        return 1900 + (days1900 / 365);
     }
-
-    return result;
+    
+    unsigned int year = BASE_YEAR;
+    unsigned long remainingDays = days1900 - DAYS_UNTIL_2020;
+    
+    while (remainingDays > 0) {
+        unsigned int daysInYear = this->isLeapYear(year) ? 366 : 365;
+        if (remainingDays < daysInYear) {
+            break;
+        }
+        remainingDays -= daysInYear;
+        year++;
+    }
+    
+    return year;
 }
 
 /**

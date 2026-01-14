@@ -167,7 +167,7 @@ int displayRandomMessage(bool init) {
   static bool isDisplaying = false;     // Whether a message is currently being displayed
   static bool isClearing = false;       // Whether we're in the process of clearing the message
   static uint32_t messageColor = 0xFF0000; // Red color for the message
-  static uint32_t savedColors[20][2];   // To save the original colors of the LEDs
+  static uint8_t savedCoords[20][2];    // To save the coordinates (x,y) of the message LEDs
   static bool activeLeds[20] = {false}; // Track which LEDs are currently active
 
   // If initializing, select a random message and start displaying
@@ -191,8 +191,8 @@ int displayRandomMessage(bool init) {
       
       // Save the current color at this position (we'll need to restore it later)
       // We're using the targetgrid directly, which isn't ideal but necessary to preserve state
-      savedColors[i][0] = x;
-      savedColors[i][1] = y;
+      savedCoords[i][0] = x;
+      savedCoords[i][1] = y;
     }
     
     logger.logString("Starting random message display: " + String(currentMessage));
@@ -269,8 +269,8 @@ int displayRandomMessage(bool init) {
       // Mark this LED as inactive
       activeLeds[currentLed] = false;
       
-      uint8_t x = savedColors[currentLed][0];
-      uint8_t y = savedColors[currentLed][1];
+      uint8_t x = savedCoords[currentLed][0];
+      uint8_t y = savedCoords[currentLed][1];
       
       // Reset this LED to its original state by redrawing the current time
       // We need to clear this specific LED without affecting others
@@ -387,7 +387,7 @@ int showStringOnClock(String message, uint32_t color){
 String timeToString(uint8_t hours,uint8_t minutes){
   
   //ES IST
-  String message = "ES IST ";
+  String message;\r\n  message.reserve(50); // Pre-allocate to avoid heap fragmentation\r\n  message = "ES IST ";
 
   
   //show minutes

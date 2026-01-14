@@ -41,6 +41,8 @@ bool requestAPIData(UDPLogger &logger) {
         api_lon = lonString.toFloat();
         logger.logString("[HTTP] Received longitude: " + String(api_lon));
 
+        res = true; // Successfully parsed API response
+
       }
     } 
     else {
