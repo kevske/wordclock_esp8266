@@ -455,3 +455,145 @@ String timeToString(uint8_t hours,uint8_t minutes){
 
   return message;
 }
+
+/**
+ * @brief Show temperature value on the matrix
+ * 
+ * @param temp Temperature in Celsius
+ */
+
+/**
+ * @brief Show temperature value on the matrix
+ * 
+ * @param temp Temperature in Celsius
+ */
+void showTemperature(int temp) {
+    // Note: gridFlush() removed to allow composition with weather animation
+
+    // Limit display range to -9 to 99 for our 2 digit layout
+    // User special request: "Only consider the "-" case for temperatures down to -9 degree to use the dash from the first number segment"
+    if (temp < -9) temp = -9; 
+    if (temp > 99) temp = 99;
+
+    uint32_t color = maincolor_clock; 
+
+    // Indicator 'O' at x=8, y=4
+    ledmatrix.gridAddPixel(8, 4, color);
+
+    // Digits start at x=1, y=5
+    // We have 11 columns, 3x5 font. 
+    // Single digit: centered? Or fixed pos? User: "starting at the sixth row and second column" which is x=1, y=5.
+    
+    // Layout: 
+    // Digit 1: x=1..3
+    // Spacing: x=4
+    // Digit 2: x=5..7
+    
+    // If negative, Digit 1 (Index 0 in printNumber) is used for dash? 
+    // printNumber uses the 3x5 font numbers_font[number]. 
+    // We don't have a dash in numbers_font probably.
+    // Hack: Manually draw dash if negative.
+
+    if (temp >= 0) {
+        if (temp >= 10) {
+            ledmatrix.printNumber(1, 5, temp / 10, color);
+            ledmatrix.printNumber(5, 5, temp % 10, color);
+        } else {
+            // Single digit at x=1 or centered? 
+            // "starting at the sixth row and second column" usually implies the block starts there. 
+            // If single digit, maybe place it at x=5 (second position) or x=3? 
+            // Let's stick to second position for single digit to look nice under the degree symbol, or first?
+            // Let's put it at x=3 (Centered-ish)
+             ledmatrix.printNumber(3, 5, temp, color);
+        }
+    } else {
+        // Negative Temperature (e.g. -5)
+        // User: "use the dash from the first number segment"
+        // Dash usually middle row of 3x5 -> y=5+2 = 7. x=1..3
+        
+        // Draw Dash
+        ledmatrix.gridAddPixel(1, 7, color);
+        ledmatrix.gridAddPixel(2, 7, color);
+        ledmatrix.gridAddPixel(3, 7, color);
+        
+        ledmatrix.printNumber(5, 5, abs(temp), color);
+    }
+}
+
+
+/**
+ * @brief Draw weather condition animation at lines 1-4 (Index 0-3)
+ * 
+ * @param code WMO Weather Code
+ * @param frame Animation frame counter
+ */
+void showWeatherAnimation(int code, int frame) {
+    // Mapping WMO codes
+    // 0, 1: Sunny (Yellow Sun)
+    // 2, 3, 45, 48: Cloudy (Light Blue Cloud)
+    // 51-67, 80-82: Rainy (Falling Dark Blue Raindrops)
+    // 71-77, 85-86: Snowy (Falling White Snow)
+    
+    // Colors
+    uint32_t colSun = LEDMatrix::Color24bit(255, 200, 0); // Yellow/Orange
+    uint32_t colRain = LEDMatrix::Color24bit(0, 0, 200);   // Dark Blue
+    uint32_t colCloud = LEDMatrix::Color24bit(100, 100, 255); // Light Blue
+    uint32_t colSnow = LEDMatrix::Color24bit(255, 255, 255); // White
+
+    if (code == 0 || code == 1) {
+        // SUNNY: Draw Sun
+        // Center x=5. y=0..2
+        //   x
+        //  xxx
+        //   x
+        ledmatrix.gridAddPixel(5, 0, colSun);
+        ledmatrix.gridAddPixel(4, 1, colSun);
+        ledmatrix.gridAddPixel(5, 1, colSun);
+        ledmatrix.gridAddPixel(6, 1, colSun);
+        ledmatrix.gridAddPixel(5, 2, colSun);
+        // Rays?
+        if (frame % 2 == 0) {
+            ledmatrix.gridAddPixel(3, 1, colSun);
+            ledmatrix.gridAddPixel(7, 1, colSun);
+            ledmatrix.gridAddPixel(5, 3, colSun); // slightly into middle
+        } else {
+            ledmatrix.gridAddPixel(4, 0, colSun);
+            ledmatrix.gridAddPixel(6, 0, colSun);
+            ledmatrix.gridAddPixel(4, 2, colSun);
+            ledmatrix.gridAddPixel(6, 2, colSun);
+        }
+    } 
+    else if (code == 2 || code == 3 || code == 45 || code == 48) {
+        // CLOUDY: Draw Cloud
+        // y=1..2
+        //  xxxxx
+        // xxxxxxx
+        for(int x=3; x<=7; x++) ledmatrix.gridAddPixel(x, 1, colCloud);
+        for(int x=2; x<=8; x++) ledmatrix.gridAddPixel(x, 2, colCloud);
+    } 
+    else if ((code >= 51 && code <= 67) || (code >= 80 && code <= 82) || (code >= 95)) {
+        // RAINY: Falling drops
+        // Random drops falling 
+        // Use frame to shift y. 
+        // Simple manual rain simulation for top rows (0-3)
+        // Deterministic pseudo-random based on frame
+        for (int col = 0; col < WIDTH; col++) {
+             // Generate rain drops based on frame and col
+             if ((col + frame) % 3 == 0) {
+                 int dropY = (frame + col * 2) % 5; 
+                 if (dropY < 4) ledmatrix.gridAddPixel(col, dropY, colRain);
+             }
+        }
+    } 
+    else if ((code >= 71 && code <= 77) || (code >= 85 && code <= 86)) {
+        // SNOWY: Falling snow
+        // Slower or just white drops
+        for (int col = 0; col < WIDTH; col++) {
+             if ((col + frame) % 4 == 0) { // Sparse
+                 int dropY = (frame/2 + col * 3) % 5; // Slower fall (frame/2)
+                 if (dropY < 4) ledmatrix.gridAddPixel(col, dropY, colSnow);
+             }
+        }
+    }
+}
+

@@ -42,6 +42,7 @@
 #include "tetris.h"
 #include "snake.h"
 #include "pong.h"
+#include "weather_client.h"
 
 
 // ----------------------------------------------------------------------------------
@@ -80,9 +81,11 @@
 #define PERIOD_NTPUPDATE 30000
 #define PERIOD_TIMEVISUUPDATE 1000
 #define PERIOD_MATRIXUPDATE 100
-#define PERIOD_NIGHTMODECHECK 20000
+#define PERIOD_NIGHTMODECHECK 5000
+#define DOUBLE_CLICK_TIME 400
+#define TEMP_MODE_TIMEOUT 5000
 
-#define SHORTPRESS 100
+#define SHORTPRESS 50
 #define LONGPRESS 3000
 
 #define CURRENT_LIMIT_LED 2500 // limit the total current sonsumed by LEDs (mA)
@@ -102,8 +105,8 @@ enum direction {right, left, up, down};
 
 // own datatype for state machine states
 #define NUM_STATES 6
-enum ClockState {st_clock, st_diclock, st_spiral, st_tetris, st_snake, st_pingpong};
-const String stateNames[] = {"Clock", "DiClock", "Sprial", "Tetris", "Snake", "PingPong"};
+enum ClockState {st_clock, st_diclock, st_spiral, st_tetris, st_snake, st_pingpong, st_temperature};
+const String stateNames[] = {"Clock", "DiClock", "Sprial", "Tetris", "Snake", "PingPong", "Temperature"};
 
 // ports
 const unsigned int localPort = 2390;
@@ -172,6 +175,10 @@ long lastAnimationStep = millis();  // time of last Matrix update
 long lastNightmodeCheck = millis()  - (PERIOD_NIGHTMODECHECK-3000); // time of last nightmode check
 long lastRandomMessageCheck = 0;    // time of last random message check
 long buttonPressStart = 0;          // time of push button press start 
+long tempModeStart = 0;             // time when temp mode started
+int  lastTempClickCount = 0;        // click counter for double click
+long lastButtonRelease = 0;         // time of last button release
+uint8_t stateBeforeTemp = st_clock; // state to return to
 uint16_t behaviorUpdatePeriod = PERIOD_TIMEVISUUPDATE; // holdes the period in which the behavior should be updated
 
 // Create necessary global objects
@@ -182,6 +189,7 @@ LEDMatrix ledmatrix = LEDMatrix(&matrix, brightness, &logger);
 Tetris mytetris = Tetris(&ledmatrix, &logger);
 Snake mysnake = Snake(&ledmatrix, &logger);
 Pong mypong = Pong(&ledmatrix, &logger);
+WeatherClient weather = WeatherClient();
 
 float filterFactor = DEFAULT_SMOOTHING_FACTOR;// stores smoothing factor for led transition
 uint8_t currentState = st_clock;              // stores current state
@@ -212,6 +220,11 @@ bool ntpRequestSent = false;         // stores if ntp request is pending
 // ----------------------------------------------------------------------------------
 //                                        SETUP
 // ----------------------------------------------------------------------------------
+
+// Function prototypes
+void showTemperature(int temp);
+void showWeatherAnimation(int code, int frame);
+void stateChange(uint8_t newState, bool persistant);
 
 void setup() {
   // put your setup code here, to run once:
@@ -428,6 +441,16 @@ void loop() {
     lastStep = millis();
   }
 
+  // Handle Weather Updates
+  weather.update();
+
+  // Handle Temperature Mode Timeout
+  if (currentState == st_temperature) {
+      if (millis() - tempModeStart > TEMP_MODE_TIMEOUT) {
+          stateChange(stateBeforeTemp, false);
+      }
+  }
+
   // Turn off LEDs if ledOff is true or nightmode is active
   if((ledOff || nightMode)){
     ledmatrix.gridFlush();
@@ -473,7 +496,7 @@ void loop() {
         logger.logPrintf("Summertime: %d", ntp.updateSWChange());
         lastNTPUpdate = millis();
         watchdogCounter = 30;
-        checkNightmode();
+        updateBrightnessAndNightMode();
         if(waitForTimeAfterReboot && !nightMode){
           // update mode (e.g. write the current time onto the matrix) first time after reboot
           entryAction(currentState);
@@ -522,7 +545,7 @@ void loop() {
 
   // check if nightmode need to be activated
   if(millis() - lastNightmodeCheck > PERIOD_NIGHTMODECHECK){
-    checkNightmode();
+    updateBrightnessAndNightMode();
     lastNightmodeCheck = millis();
   }
 
@@ -656,34 +679,116 @@ void updateStateBehavior(uint8_t state){
         mypong.loopCycle();
       }
       break;
+    // state temperature
+    case st_temperature:
+      {
+         // Animation frame counter
+         static int weatherFrame = 0;
+         weatherFrame++;
+         
+         bool tomorrow = (ntp.getHours24() >= 12);
+         int temp = weather.getTemperature(tomorrow);
+         int code = weather.getWeatherCode(tomorrow);
+         
+         // Clear Matrix (was removed from showTemperature)
+         ledmatrix.gridFlush();
+         
+         // Draw Weather Animation
+         showWeatherAnimation(code, weatherFrame);
+         
+         // Draw Temperature
+         showTemperature(temp);
+      }
+      break;
   }
 }
 
 /**
- * @brief Check if nightmode should be activated
+ * @brief Check if nightmode should be activated and handle brightness transitions
  * 
  */
-void checkNightmode(){
+void updateBrightnessAndNightMode(){
   int hours = ntp.getHours24();
   int minutes = ntp.getMinutes();
   
   bool previousNightMode = nightMode;
-  nightMode = false; // Initial assumption
+  nightMode = false; // Default to active (Day mode)
+
+  // If night mode is not activated, ensure full brightness and return
+  if (!nightModeActivated) {
+    ledmatrix.setBrightness(brightness);
+    return;
+  }
 
   // Convert all times to minutes for easier comparison
   int currentTimeInMinutes = hours * 60 + minutes;
   int startInMinutes = nightModeStartHour * 60 + nightModeStartMin;
   int endInMinutes = nightModeEndHour * 60 + nightModeEndMin;
 
-  if (startInMinutes < endInMinutes && nightModeActivated) { // Same day scenario
-      // Use <= for start to include the exact start minute, < for end to exclude exact end minute
-      if (startInMinutes <= currentTimeInMinutes && currentTimeInMinutes < endInMinutes) {
-          nightMode = true;
-      }
-  } else if (startInMinutes > endInMinutes && nightModeActivated) { // Overnight scenario
-      if (currentTimeInMinutes >= startInMinutes || currentTimeInMinutes < endInMinutes) {
-          nightMode = true;
-      }
+  // Duration of fade in/out in minutes
+  const int transitionDuration = 30;
+
+  // 1. Calculate times relative to "Start of Day" (midnight usually, but we handle wrapping)
+  // We normalize everything to a 24h timeline
+  
+  // Logic: 
+  // Sunset starts at startInMinutes. Duration 30 mins.
+  // Night Mode (OFF) starts at (startInMinutes + 30).
+  // Sunrise starts at endInMinutes. Duration 30 mins.
+  // Day Mode starts at (endInMinutes + 30).
+  
+  // Check if we are in Sunset (Fade Out)
+  // Range: [start, start+30)
+  int diffSunset = currentTimeInMinutes - startInMinutes;
+  if(diffSunset < 0) diffSunset += 1440; // Handle day wrap if needed (though usually calc in sequence helps)
+  // Actually, simplest is to check each condition independently with wrap handling
+  
+  // Helper lambda or macro to check "is time X between A and B" dealing with midnight wrap
+  auto isBetween = [](int t, int a, int b) {
+    if (a <= b) return t >= a && t < b;
+    else return t >= a || t < b; 
+  };
+
+  // Calculate generic intervals
+  int sunsetEnd = (startInMinutes + transitionDuration) % 1440;
+  int sunriseEnd = (endInMinutes + transitionDuration) % 1440;
+
+  // 1. Check Night Mode (Strict OFF)
+  // Starts at Sunset End, Ends at Sunrise Start (endInMinutes)
+  if (isBetween(currentTimeInMinutes, sunsetEnd, endInMinutes)) {
+      nightMode = true;
+      // Ensure brightness is 0? 
+      // ledmatrix.setBrightness(0); // Not strictly needed as nightMode=true flushes grid
+  }
+  // 2. Check Sunset (Fade Out)
+  // Starts at NightModeStart, Ends at SunsetEnd
+  else if (isBetween(currentTimeInMinutes, startInMinutes, sunsetEnd)) {
+      // Calculate progress 0..1
+      // We need accurate minute diff handling wraps
+      int elapsed = currentTimeInMinutes - startInMinutes;
+      if (elapsed < 0) elapsed += 1440;
+      
+      float progress = (float)elapsed / transitionDuration; // 0.0 to 1.0
+      // Fade Out: Max -> 0
+      uint8_t newBrightness = (uint8_t)(brightness * (1.0 - progress));
+      ledmatrix.setBrightness(newBrightness);
+  }
+  // 3. Check Sunrise (Fade In)
+  // Starts at NightModeEnd, Ends at SunriseEnd
+  else if (isBetween(currentTimeInMinutes, endInMinutes, sunriseEnd)) {
+      // Calculate progress 0..1
+      int elapsed = currentTimeInMinutes - endInMinutes;
+      if (elapsed < 0) elapsed += 1440;
+      
+      float progress = (float)elapsed / transitionDuration; // 0.0 to 1.0
+      // Fade In: 0 -> Max
+      uint8_t newBrightness = (uint8_t)(brightness * progress);
+      ledmatrix.setBrightness(newBrightness);
+  }
+  // 4. Day Mode
+  else {
+      // Full brightness
+      ledmatrix.setBrightness(brightness);
   }
 
   // Log only on state change to reduce string churn
@@ -748,6 +853,11 @@ void entryAction(uint8_t state){
         filterFactor = 1.0; // no smoothing
         mypong.initGame(1);
       }
+      break;
+    case st_temperature:
+      ledmatrix.setDynamicColorShiftPhase(-1);
+      behaviorUpdatePeriod = 200; // Update every 200ms for animation
+      // Clear matrix done by update loop
       break;
   }
 }
@@ -926,36 +1036,74 @@ void handleLEDDirect() {
  * 
  */
 void handleButton(){
-  static bool lastButtonState = false;
-  bool buttonPressed = !digitalRead(BUTTONPIN);
-  // check rising edge
-  if(buttonPressed == true && lastButtonState == false){
-    // button press start
-    logger.logString("Button press started");
-    buttonPressStart = millis();
-  }
-  // check falling edge
-  if(buttonPressed == false && lastButtonState == true){
-    // button press ended
-    if((millis() - buttonPressStart) > LONGPRESS){
-      // longpress -> reset
-      logger.logString("Button press ended - longpress (RESET)");
-      delay(100);
-      ESP.restart();
-    }
-    else if((millis() - buttonPressStart) > SHORTPRESS){
-      // shortpress -> state change 
-      logger.logString("Button press ended - shortpress");
+  static bool lastButtonState = HIGH; // Input Pullup -> High is unpressed
+  bool currentButtonState = digitalRead(BUTTONPIN); // Low REad -> Pressed
+  static bool buttonWaitRelease = false;
 
-      if(ledOff){
-        ledOff = false;
-      }else{
-        stateChange((currentState + 1) % NUM_STATES, true);
-      }
-      
-    }
+  // Debounce/Change Logic
+  if (currentButtonState != lastButtonState) {
+     delay(5); // simple debounce
+     currentButtonState = digitalRead(BUTTONPIN);
   }
-  lastButtonState = buttonPressed;
+
+  // Press Detection (Falling Edge because Pullup)
+  if (lastButtonState == HIGH && currentButtonState == LOW) {
+      buttonPressStart = millis();
+      buttonWaitRelease = true;
+      logger.logString("Button Pressed");
+  }
+
+  // Release Detection (Rising Edge)
+  if (lastButtonState == LOW && currentButtonState == HIGH && buttonWaitRelease) {
+      long pressDuration = millis() - buttonPressStart;
+      buttonWaitRelease = false;
+      logger.logString("Button Released, Duration: " + String(pressDuration));
+
+      if (pressDuration > LONGPRESS) {
+          // Long Press -> Reset
+          logger.logString("Long Press -> Reset");
+          ESP.restart();
+      } else if (pressDuration > SHORTPRESS) {
+          // Short Press -> Register Click
+          lastTempClickCount++;
+          lastButtonRelease = millis();
+      }
+  }
+  
+  lastButtonState = currentButtonState;
+
+  // Process Clicks (Wait for Double Click Window)
+  if (lastTempClickCount > 0 && (millis() - lastButtonRelease > DOUBLE_CLICK_TIME)) {
+      if (lastTempClickCount == 1) {
+          // Single Click -> Temperature Mode
+          logger.logString("Single Click Action -> Temp Mode");
+          if (ledOff) {
+             ledOff = false;
+          } else if (currentState != st_temperature) {
+             stateBeforeTemp = currentState;
+             stateChange(st_temperature, false);
+             tempModeStart = millis();
+          } else {
+             // Already in temp mode, extend or ignore
+             tempModeStart = millis();
+          }
+      } else {
+          // Double (or more) Click -> Next Mode
+          logger.logString("Double Click Action -> Next Mode");
+          stateChange((currentState + 1) % (NUM_STATES - 1), true); // Skip st_temperature in normal cycle if desired, or include it?
+          // User said "revert back to word clock mode after 5 seconds" for temp mode
+          // And "If clicked twice, you enter the mode switch routine".
+          // So we should probably cycle through normal modes excluding temp mode from the cycle loop if possible, 
+          // or just standard cycle. Let's exclude st_temperature from standard cycle to keep it special.
+          // NUM_STATES is included in cycle, so we Modulo by (NUM_STATES - 1) assuming st_temperature is last?
+          // Using hardcoded transition for now:
+          
+          uint8_t nextState = currentState + 1;
+          if (nextState >= st_temperature) nextState = st_clock;
+          stateChange(nextState, true);
+      }
+      lastTempClickCount = 0;
+  }
 }
 
 /**
