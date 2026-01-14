@@ -537,6 +537,10 @@ void loop() {
     
     // Check if we should start displaying a random message
     if(!randomMessageActive && !nightMode && !ledOff && shouldDisplayRandomMessage(hours, minutes, seconds)) {
+      // Force a time update so the background clock shows the NEW minute
+      updateStateBehavior(currentState);
+      ledmatrix.drawOnMatrixInstant(); 
+
       randomMessageActive = true;
       displayRandomMessage(true); // Initialize the message display
     }

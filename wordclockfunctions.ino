@@ -57,7 +57,7 @@ void drawMinuteIndicator(uint8_t minutes, uint32_t color){
 /**
  * @brief Display a random message on the LED matrix
  * 
- * This function displays one of 4 possible messages on the LED matrix.
+ * This function displays one of 5 possible messages on the LED matrix.
  * The messages always start with the third and fourth LED horizontally on the top row
  * and end with the third to ninth LED vertically in the first column.
  * The message is displayed in red for 40 seconds, with LEDs turning on one by one with a 0.5 second delay.
@@ -67,7 +67,7 @@ void drawMinuteIndicator(uint8_t minutes, uint32_t color){
  */
 int displayRandomMessage(bool init) {
   // Define message paths (coordinates for LEDs to light up)
-  static const uint8_t messagePaths[4][20][2] = {
+  static const uint8_t messagePaths[5][20][2] = {
     { // Message 1: Second to eighth LED vertically in the second column
       {2, 0}, {3, 0},                  // Start: third and fourth LED horizontally on top row
       {1, 1}, {1, 2}, {1, 3}, {1, 4},  // Second column: second to eighth LED vertically
@@ -95,14 +95,21 @@ int displayRandomMessage(bool init) {
       {7, 5}, {7, 6},
       {0, 2}, {0, 3}, {0, 4}, {0, 5},  // End: third to ninth LED vertically in first column
       {0, 6}, {0, 7}, {0, 8}
+    },
+    { // Message 5: Heart pattern starting from bottom middle, clockwise
+      {5, 9}, {4, 8}, {3, 7}, {2, 6},  // Bottom left rise
+      {1, 5}, {1, 4}, {2, 3}, {3, 2},  // Top left curve
+      {4, 2}, {5, 3},                  // Middle dip
+      {6, 2}, {7, 2}, {8, 3}, {9, 4},  // Top right curve
+      {9, 5}, {8, 6}, {7, 7}, {6, 8}   // Bottom right fall
     }
   };
 
   // Number of LEDs in each message path
-  static const uint8_t messageLengths[4] = {16, 16, 14, 14};
+  static const uint8_t messageLengths[5] = {16, 16, 14, 14, 18};
   
   // Static variables to track state between function calls
-  static uint8_t currentMessage = 0;    // Current message being displayed (0-3)
+  static uint8_t currentMessage = 0;    // Current message being displayed (0-4)
   static uint8_t currentLed = 0;        // Current LED being turned on
   static unsigned long startTime = 0;   // When the message started displaying
   static unsigned long lastLedTime = 0; // When the last LED was turned on
@@ -114,7 +121,7 @@ int displayRandomMessage(bool init) {
 
   // If initializing, select a random message and start displaying
   if (init) {
-    currentMessage = random(4);  // Select a random message (0-3)
+    currentMessage = random(5);  // Select a random message (0-4)
     currentLed = 0;
     startTime = millis();
     lastLedTime = startTime;
