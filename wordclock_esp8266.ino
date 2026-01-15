@@ -707,16 +707,57 @@ void updateStateBehavior(uint8_t state){
  * @brief Check if nightmode should be activated and handle brightness transitions
  * 
  */
+/**
+ * @brief Helper function to check if time t is between a and b, handling wrap-around
+ */
+bool isBetween(int t, int a, int b) {
+  if (a <= b) return t >= a && t < b;
+  else return t >= a || t < b; 
+}
+
+/**
+ * @brief Check if nightmode should be activated and handle brightness transitions
+ * 
+ */
 void updateBrightnessAndNightMode(){
+  // 0. Safety Check: If NTP hasn't synced (Year < 2020), do not engage night mode logic.
+  // This prevents the clock from getting stuck in night mode if it boots with default (1970) time.
+  if (ntp.getYear() < 2020) {
+      if (nightMode) {
+         nightMode = false;
+         logger.logString("Time invalid (<2020), forcing Day Mode");
+         ledmatrix.setBrightness(brightness); // Restore full brightness
+      }
+      return; 
+  }
+
   int hours = ntp.getHours24();
   int minutes = ntp.getMinutes();
   
   bool previousNightMode = nightMode;
-  nightMode = false; // Default to active (Day mode)
+  bool nextNightMode = false; // Default to active (Day mode)
 
-  // If night mode is not activated, ensure full brightness and return
+  // If night mode is not activated in settings, ensure full brightness and return
   if (!nightModeActivated) {
-    ledmatrix.setBrightness(brightness);
+    if (nightMode) {
+       // Transitioning from Night Mode (stale state) to Manual Deactivation
+       nightMode = false;
+       // Soft Start to prevent brownout
+       uint8_t target = brightness;
+       for (int i=0; i<=target; i+=5) {
+           ledmatrix.setBrightness(i);
+           ledmatrix.drawOnMatrixInstant(); // Force update to draw current limit? actually setBrightness updates next draw.
+           // To visually ramp, we might need to force draw, but just setting limit prevents internal current spike logic? 
+           // Actually, setBrightness just sets a global scaler. The power spike happens on next .show().
+           // To be safe, we just ramp the scalar.
+           delay(10); 
+           ESP.wdtFeed(); // Feed dog during ramp
+       }
+       ledmatrix.setBrightness(target); 
+    } else {
+       // ensure brightness is correct
+       ledmatrix.setBrightness(brightness); 
+    }
     return;
   }
 
@@ -728,27 +769,6 @@ void updateBrightnessAndNightMode(){
   // Duration of fade in/out in minutes
   const int transitionDuration = 30;
 
-  // 1. Calculate times relative to "Start of Day" (midnight usually, but we handle wrapping)
-  // We normalize everything to a 24h timeline
-  
-  // Logic: 
-  // Sunset starts at startInMinutes. Duration 30 mins.
-  // Night Mode (OFF) starts at (startInMinutes + 30).
-  // Sunrise starts at endInMinutes. Duration 30 mins.
-  // Day Mode starts at (endInMinutes + 30).
-  
-  // Check if we are in Sunset (Fade Out)
-  // Range: [start, start+30)
-  int diffSunset = currentTimeInMinutes - startInMinutes;
-  if(diffSunset < 0) diffSunset += 1440; // Handle day wrap if needed (though usually calc in sequence helps)
-  // Actually, simplest is to check each condition independently with wrap handling
-  
-  // Helper lambda or macro to check "is time X between A and B" dealing with midnight wrap
-  auto isBetween = [](int t, int a, int b) {
-    if (a <= b) return t >= a && t < b;
-    else return t >= a || t < b; 
-  };
-
   // Calculate generic intervals
   int sunsetEnd = (startInMinutes + transitionDuration) % 1440;
   int sunriseEnd = (endInMinutes + transitionDuration) % 1440;
@@ -756,7 +776,7 @@ void updateBrightnessAndNightMode(){
   // 1. Check Night Mode (Strict OFF)
   // Starts at Sunset End, Ends at Sunrise Start (endInMinutes)
   if (isBetween(currentTimeInMinutes, sunsetEnd, endInMinutes)) {
-      nightMode = true;
+      nextNightMode = true;
       // Ensure brightness is 0? 
       // ledmatrix.setBrightness(0); // Not strictly needed as nightMode=true flushes grid
   }
@@ -764,7 +784,6 @@ void updateBrightnessAndNightMode(){
   // Starts at NightModeStart, Ends at SunsetEnd
   else if (isBetween(currentTimeInMinutes, startInMinutes, sunsetEnd)) {
       // Calculate progress 0..1
-      // We need accurate minute diff handling wraps
       int elapsed = currentTimeInMinutes - startInMinutes;
       if (elapsed < 0) elapsed += 1440;
       
@@ -772,6 +791,9 @@ void updateBrightnessAndNightMode(){
       // Fade Out: Max -> 0
       uint8_t newBrightness = (uint8_t)(brightness * (1.0 - progress));
       ledmatrix.setBrightness(newBrightness);
+      nextNightMode = false; // Still technically "active" logic, but not "OFF" execution state
+      // Actually original logic set nightMode=false here?
+      // Original: nightMode = false; (default at top)
   }
   // 3. Check Sunrise (Fade In)
   // Starts at NightModeEnd, Ends at SunriseEnd
@@ -784,16 +806,21 @@ void updateBrightnessAndNightMode(){
       // Fade In: 0 -> Max
       uint8_t newBrightness = (uint8_t)(brightness * progress);
       ledmatrix.setBrightness(newBrightness);
+      nextNightMode = false;
   }
   // 4. Day Mode
   else {
       // Full brightness
       ledmatrix.setBrightness(brightness);
+      nextNightMode = false;
   }
+  
+  nightMode = nextNightMode;
 
   // Log only on state change to reduce string churn
   if (nightMode != previousNightMode) {
-    logger.logString(String("Nightmode ") + (nightMode ? "active" : "inactive"));
+    logger.logString(String("Nightmode state changed: ") + (nightMode ? "Active (OFF)" : "Inactive (ON)"));
+    logger.logString(String("Current Time: ") + hours + ":" + minutes);
   }
 }
 
@@ -894,7 +921,9 @@ void setMainColor(uint8_t red, uint8_t green, uint8_t blue){
   EEPROM.put(ADR_MC_RED, red);
   EEPROM.put(ADR_MC_GREEN, green);
   EEPROM.put(ADR_MC_BLUE, blue);
+  ESP.wdtFeed();
   EEPROM.commit();
+  ESP.wdtFeed();
 }
 
 /**
@@ -1166,7 +1195,9 @@ void handleCommand() {
     if(modestr == "1") nightModeActivated = true;
     else nightModeActivated = false;
     EEPROM.write(ADR_NM_ACTIVATED, nightModeActivated);
+    ESP.wdtFeed(); // Feed before commit
     EEPROM.commit();
+    ESP.wdtFeed(); // Feed after commit
     updateBrightnessAndNightMode();
   }
   else if(server.argName(0) == "setting"){
@@ -1190,7 +1221,9 @@ void handleCommand() {
     EEPROM.write(ADR_NM_END_M, nightModeEndMin);
     EEPROM.write(ADR_BRIGHTNESS, brightness);
     EEPROM.write(ADR_COLSHIFTSPEED, dynColorShiftSpeed);
+    ESP.wdtFeed(); // Feed before commit
     EEPROM.commit();
+    ESP.wdtFeed(); // Feed after commit
     logger.logString("Nightmode starts at: " + String(nightModeStartHour) + ":" + String(nightModeStartMin));
     logger.logString("Nightmode ends at: " + String(nightModeEndHour) + ":" + String(nightModeEndMin));
     logger.logString("Brightness: " + String(brightness));
@@ -1286,8 +1319,11 @@ void handleCommand() {
     String str = server.arg(0);
     if(str == "1") dynColorShiftActive = true;
     else dynColorShiftActive = false;
+
     EEPROM.write(ADR_COLSHIFTACTIVE, dynColorShiftActive);
+    ESP.wdtFeed();
     EEPROM.commit();
+    ESP.wdtFeed();
   }
   server.send(204, "text/plain", "No Content"); // this page doesn't send back content --> 204
 }

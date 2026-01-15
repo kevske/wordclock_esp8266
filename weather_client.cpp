@@ -50,12 +50,13 @@ void WeatherClient::parseJson(String payload) {
   // NOTE: This manual parser is fragile but sufficient for this specific structure if Open-Meteo doesn't change format drastically.
   // It looks for "temperature_2m" and then parses the array.
 
-  tempTodayNoon = extractValueAtIndex(payload, "\"temperature_2m\"", 12);
-  tempTomorrowNoon = extractValueAtIndex(payload, "\"temperature_2m\"", 36);
+  // Use ":[" to ensure we match the data array and not the hourly_units metadata
+  tempTodayNoon = extractValueAtIndex(payload, "\"temperature_2m\":[", 12);
+  tempTomorrowNoon = extractValueAtIndex(payload, "\"temperature_2m\":[", 36);
   
   // Extract weather codes
-  codeTodayNoon = (int)extractValueAtIndex(payload, "\"weathercode\"", 12);
-  codeTomorrowNoon = (int)extractValueAtIndex(payload, "\"weathercode\"", 36);
+  codeTodayNoon = (int)extractValueAtIndex(payload, "\"weathercode\":[", 12);
+  codeTomorrowNoon = (int)extractValueAtIndex(payload, "\"weathercode\":[", 36);
   
   // Basic validation check (e.g. -50 to +50 is reasonable range)
   if (tempTodayNoon > -60 && tempTodayNoon < 60) {
