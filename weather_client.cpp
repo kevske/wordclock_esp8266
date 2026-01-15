@@ -3,8 +3,8 @@
 WeatherClient::WeatherClient() {
   tempTodayNoon = 0;
   tempTomorrowNoon = 0;
-  codeTodayNoon = 0;
-  codeTomorrowNoon = 0;
+  sunshineToday = 0;
+  sunshineTomorrow = 0;
   lastUpdate = 0;
   dataValid = false;
 }
@@ -58,16 +58,26 @@ void WeatherClient::parseJson(String payload) {
   codeTodayNoon = (int)extractValueAtIndex(payload, "\"weathercode\":[", 12);
   codeTomorrowNoon = (int)extractValueAtIndex(payload, "\"weathercode\":[", 36);
   
+  // Extract sunshine duration (daily array)
+  sunshineToday = extractDailyValueAtIndex(payload, "\"sunshine_duration\":[", 0);
+  sunshineTomorrow = extractDailyValueAtIndex(payload, "\"sunshine_duration\":[", 1);
+  
   // Basic validation check (e.g. -50 to +50 is reasonable range)
   if (tempTodayNoon > -60 && tempTodayNoon < 60) {
      dataValid = true;
-     Serial.printf("Weather Update: Today Noon: %.1f, Tomorrow Noon: %.1f\n", tempTodayNoon, tempTomorrowNoon);
+     Serial.printf("Weather Update: Today Noon: %.1f C, Sun: %.1f h | Tomorrow Noon: %.1f C, Sun: %.1f h\n", 
+                    tempTodayNoon, sunshineToday/3600.0, tempTomorrowNoon, sunshineTomorrow/3600.0);
   } else {
      dataValid = false;
   }
 }
 
-// Extracts the Nth value from a JSON array identified by key
+// Extracts the Nth value from a JSON array identified by key (Same logic, helper to keep code clean)
+float WeatherClient::extractDailyValueAtIndex(String payload, String key, int targetIndex) {
+  // exact same implementation as extractValueAtIndex for now, just reused logic
+  return extractValueAtIndex(payload, key, targetIndex);
+}
+
 float WeatherClient::extractValueAtIndex(String payload, String key, int targetIndex) {
   int keyStart = payload.indexOf(key);
   if (keyStart == -1) return -999;
@@ -98,6 +108,11 @@ float WeatherClient::extractValueAtIndex(String payload, String key, int targetI
 
   String valDir = payload.substring(searchPos, endPos);
   return valDir.toFloat();
+}
+
+float WeatherClient::getSunshineDuration(bool tomorrow) {
+    if (tomorrow) return sunshineTomorrow;
+    return sunshineToday;
 }
 
 int WeatherClient::getTemperature(bool tomorrow) {

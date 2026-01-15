@@ -224,6 +224,7 @@ bool ntpRequestSent = false;         // stores if ntp request is pending
 // Function prototypes
 void showTemperature(int temp);
 void showWeatherAnimation(int code, int frame);
+void showSunshineIndicator(float sunshineSeconds);
 void stateChange(uint8_t newState, bool persistant);
 
 void setup() {
@@ -689,6 +690,7 @@ void updateStateBehavior(uint8_t state){
          bool tomorrow = (ntp.getHours24() >= 12);
          int temp = weather.getTemperature(tomorrow);
          int code = weather.getWeatherCode(tomorrow);
+         float sunshine = weather.getSunshineDuration(tomorrow);
          
          // Clear Matrix (was removed from showTemperature)
          ledmatrix.gridFlush();
@@ -698,6 +700,9 @@ void updateStateBehavior(uint8_t state){
          
          // Draw Temperature
          showTemperature(temp);
+         
+         // Draw Sunshine Indicator
+         showSunshineIndicator(sunshine);
       }
       break;
   }

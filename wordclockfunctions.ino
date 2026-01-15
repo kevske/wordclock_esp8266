@@ -55,6 +55,28 @@ void drawMinuteIndicator(uint8_t minutes, uint32_t color){
 }
 
 /**
+ * @brief Show sunshine duration on minute indicators (1-4 hours)
+ * 
+ * @param sunshineSeconds Total sunshine duration in seconds
+ */
+void showSunshineIndicator(float sunshineSeconds) {
+    int hours = (int)(sunshineSeconds / 3600.0);
+    uint32_t sunColor = LEDMatrix::Color24bit(255, 200, 0); // Yellow
+    
+    if (hours >= 4) {
+        ledmatrix.setMinIndicator(0b1111, sunColor);
+    } else if (hours >= 3) {
+        ledmatrix.setMinIndicator(0b1110, sunColor);
+    } else if (hours >= 2) {
+        ledmatrix.setMinIndicator(0b1100, sunColor);
+    } else if (hours >= 1) {
+        ledmatrix.setMinIndicator(0b1000, sunColor);
+    } else {
+        ledmatrix.setMinIndicator(0b0000, 0);
+    }
+}
+
+/**
  * @brief Display a random message on the LED matrix
  * 
  * This function displays one of 5 possible messages on the LED matrix.
@@ -98,15 +120,16 @@ int displayRandomMessage(bool init) {
     },
     { // Message 5: Heart pattern starting from bottom middle, clockwise
       {5, 9}, {4, 8}, {3, 7}, {2, 6},  // Bottom left rise
-      {1, 5}, {1, 4}, {2, 3}, {3, 2},  // Top left curve
-      {4, 2}, {5, 3},                  // Middle dip
-      {6, 2}, {7, 2}, {8, 3}, {9, 4},  // Top right curve
-      {9, 5}, {8, 6}, {7, 7}, {6, 8}   // Bottom right fall
+      {1, 5}, {1, 4}, {1, 3}, {2, 2},  // Left side & curve start
+      {3, 1}, {4, 1}, {5, 2},          // Top left & Dip
+      {6, 1}, {7, 1}, {8, 2},          // Top right & curve start
+      {9, 3}, {9, 4}, {9, 5},          // Right side
+      {8, 6}, {7, 7}, {6, 8}           // Bottom right fall
     }
   };
 
   // Number of LEDs in each message path
-  static const uint8_t messageLengths[5] = {16, 16, 14, 14, 18};
+  static const uint8_t messageLengths[5] = {16, 16, 14, 14, 20};
   
   // Static variables to track state between function calls
   static uint8_t currentMessage = 0;    // Current message being displayed (0-4)
@@ -569,22 +592,55 @@ void showWeatherAnimation(int code, int frame) {
             ledmatrix.gridAddPixel(6, 2, colSun);
         }
     } 
-    else if (code == 2 || code == 3) {
-        // CLOUDY: Moving Cloud (White)
-        // Cloud shape:
-        //  xxxxx
-        // xxxxxxx
-        // Width = 7. Screen Width = 11.
+    else if (code == 2) {
+        // PARTLY CLOUDY: Sun + Cloud
+        // First draw Sun (same as Sunny)
+        ledmatrix.gridAddPixel(5, 0, colSun);
+        ledmatrix.gridAddPixel(4, 1, colSun);
+        ledmatrix.gridAddPixel(5, 1, colSun);
+        ledmatrix.gridAddPixel(6, 1, colSun);
+        ledmatrix.gridAddPixel(5, 2, colSun);
         
-        // Slow drift: 1 pixel every 4 frames
-        int offset = (frame / 4) % (WIDTH + 8) - 7; // Drifts from left (-7) to right (11)
-        
+        // Animated Rays
+        if (frame % 8 < 4) { 
+            ledmatrix.gridAddPixel(3, 1, colSun);
+            ledmatrix.gridAddPixel(7, 1, colSun);
+            ledmatrix.gridAddPixel(5, 3, colSun); 
+        } else {
+            ledmatrix.gridAddPixel(4, 0, colSun);
+            ledmatrix.gridAddPixel(6, 0, colSun);
+            ledmatrix.gridAddPixel(4, 2, colSun);
+            ledmatrix.gridAddPixel(6, 2, colSun);
+        }
+
+        // Then draw Cloud on top
+        int offset = (frame / 4) % (WIDTH + 8) - 7;
         for(int x=0; x<WIDTH; x++) {
              int relX = x - offset;
-             // Top row of cloud (y=1)
              if (relX >= 3 && relX <= 7) ledmatrix.gridAddPixel(x, 1, colCloud);
-             // Bottom row of cloud (y=2)
              if (relX >= 2 && relX <= 8) ledmatrix.gridAddPixel(x, 2, colCloud);
+        }
+    }
+    else if (code == 3) {
+        // CLOUDY: Two Moving Clouds
+        int cycle = WIDTH + 8;
+        
+        // Cloud 1 (Standard)
+        int offset1 = (frame / 4) % cycle - 7;
+        
+        // Cloud 2 (Starts in middle, half cycle offset)
+        int offset2 = ((frame / 4) + (cycle / 2)) % cycle - 7;
+
+        for(int x=0; x<WIDTH; x++) {
+             // Draw Cloud 1
+             int relX1 = x - offset1;
+             if (relX1 >= 3 && relX1 <= 7) ledmatrix.gridAddPixel(x, 1, colCloud);
+             if (relX1 >= 2 && relX1 <= 8) ledmatrix.gridAddPixel(x, 2, colCloud);
+
+             // Draw Cloud 2
+             int relX2 = x - offset2;
+             if (relX2 >= 3 && relX2 <= 7) ledmatrix.gridAddPixel(x, 1, colCloud);
+             if (relX2 >= 2 && relX2 <= 8) ledmatrix.gridAddPixel(x, 2, colCloud);
         }
     }
     else if (code == 45 || code == 48) {
