@@ -6,17 +6,30 @@ WeatherClient::WeatherClient() {
   sunshineToday = 0;
   sunshineTomorrow = 0;
   lastUpdate = 0;
+  lastAttempt = 0;
   dataValid = false;
 }
 
 void WeatherClient::update() {
-  // Update every 30 minutes or if never updated
+  // Skip if WiFi is not connected - avoids blocking connection attempts
+  if (WiFi.status() != WL_CONNECTED) {
+    return;
+  }
+
+  // Use cached data if still valid (30 minutes)
   if (dataValid && (millis() - lastUpdate < 1800000)) {
     return;
   }
 
+  // Rate-limit connection attempts: at most once every 60 seconds when failing
+  if (!dataValid && (millis() - lastAttempt < 60000)) {
+    return;
+  }
+  lastAttempt = millis();
+
   WiFiClientSecure client;
   client.setInsecure(); // Skip certificate validation for simplicity/speed on ESP8266
+  client.setTimeout(5000);  // 5 second timeout (default is ~30s)
 
   if (!client.connect(host, 443)) {
     Serial.println("WeatherClient: Connection failed");
@@ -50,17 +63,18 @@ void WeatherClient::parseJson(String payload) {
   // NOTE: This manual parser is fragile but sufficient for this specific structure if Open-Meteo doesn't change format drastically.
   // It looks for "temperature_2m" and then parses the array.
 
-  // Use ":[" to ensure we match the data array and not the hourly_units metadata
-  tempTodayNoon = extractValueAtIndex(payload, "\"temperature_2m\":[", 12);
-  tempTomorrowNoon = extractValueAtIndex(payload, "\"temperature_2m\":[", 36);
+  // Use simple keys and rely on robust parsing to find the array
+  // Use "\"temperature_2m\"" (etc) to match the key regardless of following spaces or structure
+  tempTodayNoon = extractValueAtIndex(payload, "\"temperature_2m\"", 12);
+  tempTomorrowNoon = extractValueAtIndex(payload, "\"temperature_2m\"", 36);
   
   // Extract weather codes
-  codeTodayNoon = (int)extractValueAtIndex(payload, "\"weathercode\":[", 12);
-  codeTomorrowNoon = (int)extractValueAtIndex(payload, "\"weathercode\":[", 36);
+  codeTodayNoon = (int)extractValueAtIndex(payload, "\"weathercode\"", 12);
+  codeTomorrowNoon = (int)extractValueAtIndex(payload, "\"weathercode\"", 36);
   
   // Extract sunshine duration (daily array)
-  sunshineToday = extractDailyValueAtIndex(payload, "\"sunshine_duration\":[", 0);
-  sunshineTomorrow = extractDailyValueAtIndex(payload, "\"sunshine_duration\":[", 1);
+  sunshineToday = extractDailyValueAtIndex(payload, "\"sunshine_duration\"", 0);
+  sunshineTomorrow = extractDailyValueAtIndex(payload, "\"sunshine_duration\"", 1);
   
   // Basic validation check (e.g. -50 to +50 is reasonable range)
   if (tempTodayNoon > -60 && tempTodayNoon < 60) {
@@ -79,11 +93,30 @@ float WeatherClient::extractDailyValueAtIndex(String payload, String key, int ta
 }
 
 float WeatherClient::extractValueAtIndex(String payload, String key, int targetIndex) {
-  int keyStart = payload.indexOf(key);
-  if (keyStart == -1) return -999;
+  int startSearch = 0;
+  int arrayStart = -1;
+  
+  // Loop to find the key followed by a '[' (checking for valid data array vs metadata)
+  while (true) {
+    int keyPos = payload.indexOf(key, startSearch);
+    if (keyPos == -1) return -999;
+    
+    // Check what follows
+    int cursor = keyPos + key.length();
+    // Skip whitespace and colon
+    while (cursor < payload.length() && (payload[cursor] == ' ' || payload[cursor] == '\t' || payload[cursor] == '\r' || payload[cursor] == '\n' || payload[cursor] == ':')) {
+       cursor++;
+    }
 
-  int arrayStart = payload.indexOf('[', keyStart);
-  if (arrayStart == -1) return -999;
+    if (cursor < payload.length() && payload[cursor] == '[') {
+       // Found it!
+       arrayStart = cursor;
+       break; 
+    } else {
+       // Not the one (e.g. was units), search next
+       startSearch = keyPos + 1;
+    }
+  }
 
   int currentIndex = 0;
   int searchPos = arrayStart + 1;
@@ -127,4 +160,8 @@ int WeatherClient::getWeatherCode(bool tomorrow) {
 
 bool WeatherClient::isDataValid() {
     return dataValid;
+}
+
+void WeatherClient::invalidateCache() {
+    dataValid = false;
 }

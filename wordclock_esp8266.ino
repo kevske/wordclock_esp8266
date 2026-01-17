@@ -432,6 +432,8 @@ void loop() {
       ntp.setupNTPClient();
       // Trigger a near-term NTP update
       lastNTPUpdate = millis() - (PERIOD_NTPUPDATE - 1000);
+      // Force weather refresh after reconnect
+      weather.invalidateCache();
     }
     prevWiFiStatus = currStatus;
   }

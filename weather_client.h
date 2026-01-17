@@ -14,6 +14,7 @@ class WeatherClient {
     int getWeatherCode(bool tomorrow);
     float getSunshineDuration(bool tomorrow);
     bool isDataValid();
+    void invalidateCache();  // Force refresh on next update
 
   private:
     float tempTodayNoon;
@@ -23,6 +24,7 @@ class WeatherClient {
     float sunshineToday;
     float sunshineTomorrow;
     unsigned long lastUpdate;
+    unsigned long lastAttempt;  // Rate-limit failed connection attempts
     bool dataValid;
     
     // Coordinates for Oedheim, Germany
