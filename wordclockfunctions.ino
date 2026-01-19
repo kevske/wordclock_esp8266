@@ -701,3 +701,128 @@ void showWeatherAnimation(int code, int frame) {
     }
 }
 
+/**
+ * @brief Animate "SECHS" then "SIEBEN" matching the requirements:
+ *        1. "SECHS" letter by letter (1s each)
+ *        2. Wait 5s
+ *        3. "SIEBEN" letter by letter (1s each)
+ *        4. Wait 5s
+ *        5. Clear all letters quickly
+ * 
+ * @param elapsedMillis Time in milliseconds since animation started
+ * @return true if animation is complete, false otherwise
+ */
+bool animateSiebenSechs(long elapsedMillis) {
+  // Clear matrix first
+  ledmatrix.gridFlush();
+  
+  // Timing Constants (in ms)
+  const long T_START_SECHS = 0;
+  const long T_END_SECHS_ANIM = 5000; // 5 letters * 1s
+  const long T_START_WAIT_1 = 5000;
+  const long T_END_WAIT_1 = 10000;    // 5s wait
+  const long T_START_SIEBEN = 10000;
+  const long T_END_SIEBEN_ANIM = 16000; // 6 letters * 1s
+  const long T_START_WAIT_2 = 16000;
+  const long T_END_WAIT_2 = 21000;    // 5s wait
+  const long T_START_CLEAR = 21000;
+
+  uint32_t color = LEDMatrix::Color24bit(255, 0, 0); // RED
+
+  // "SECHS" mapping: "SECHS " is at index 8 of clockStringGerman (ES IST FUNF(5) ZEHN(10) ZWANZIG(19) DREI(26) VIERTEL(36) NACH(44) VOR(49) HALB(54) ZWOLF(62) ZWEI(70) EIN(S)(75) SIEBEN(81) ...)
+  // Let's re-verify indices from clockStringGerman:
+  // "ESHISTPZEHNHALBZWANZIGRNFUNFQKJMSATVIERTELAASONACHXVORRSNTCDREIBLANISIEBENLEHEACHTELFUNFRZWOLFUVIERSECHSZWEINSZEHNEUNKUHR"
+  // Manual text search in string:
+  // ... ZWOLF ... VIER SECHS ...
+  // Index of "SECHS": 
+  // ZWOLF ends at ... 
+  // Let's use string search dynamically to be safe, like showStringOnClock does, 
+  // but we need specific letter positions for animation.
+  
+  // Positions for "SECHS":
+  // In "ESHIST...":
+  // "SECHS" is usually near end.
+  // Code search:
+  // showStringOnClock uses clockStringGerman.indexOf(word)
+  // Let's hardcode coordinates for stability or use the string finding helper?
+  // The helper finds the WHOLE word.
+  // We need individual letters.
+  // "SECHS" is contiguous in the matrix.
+  // Find "SECHS" start index once:
+  static int idxSechs = clockStringGerman.indexOf("SECHS");
+  static int idxSieben = clockStringGerman.indexOf("SIEBEN");
+  
+  // Draw SECHS logic
+  // Letters: S, E, C, H, S
+  // Count: 5
+  if (elapsedMillis >= T_START_SECHS && elapsedMillis < T_START_CLEAR) {
+    int visibleLetters = 0;
+    
+    // Check if we are past the animation phase
+    if (elapsedMillis >= T_END_SECHS_ANIM) {
+      visibleLetters = 5; // All visible
+    } else {
+      visibleLetters = (elapsedMillis - T_START_SECHS) / 1000 + 1;
+    }
+    
+    // Draw visible letters of SECHS
+    for (int i = 0; i < visibleLetters && i < 5; i++) {
+      int pos = idxSechs + i;
+      int x = pos % WIDTH;
+      int y = pos / WIDTH;
+      ledmatrix.gridAddPixel(x, y, color);
+    }
+  }
+
+  // Draw SIEBEN logic
+  // Letters: S, I, E, B, E, N
+  // Count: 6
+  if (elapsedMillis >= T_START_SIEBEN && elapsedMillis < T_START_CLEAR) {
+     int visibleLetters = 0;
+     
+     if (elapsedMillis >= T_END_SIEBEN_ANIM) {
+       visibleLetters = 6;
+     } else {
+       visibleLetters = (elapsedMillis - T_START_SIEBEN) / 1000 + 1;
+     }
+     
+     // Draw visible letters of SIEBEN
+     for (int i = 0; i < visibleLetters && i < 6; i++) {
+        int pos = idxSieben + i;
+        int x = pos % WIDTH;
+        int y = pos / WIDTH;
+        ledmatrix.gridAddPixel(x, y, color);
+     }
+  }
+  
+  // Clear Logic (Fast Disappear)
+  if (elapsedMillis >= T_START_CLEAR) {
+    // We want them to disappear "in the same order one by one"
+    // Order: SECHS (1..5), SIEBEN (1..6) -> Total 11 letters
+    // "Without waiting times" -> fast.
+    // Let's say 100ms per letter.
+    int totalLetters = 11;
+    int lettersToRemove = (elapsedMillis - T_START_CLEAR) / 100; // 0, 1, 2...
+    
+    if (lettersToRemove >= totalLetters) {
+      return true; // Animation Done
+    }
+    
+    // Re-draw ONLY those that haven't been removed yet
+    // Index 0..4 = SECHS, 5..10 = SIEBEN
+    
+    for (int k = lettersToRemove; k < totalLetters; k++) {
+        int pos = 0;
+        if (k < 5) {
+           pos = idxSechs + k;
+        } else {
+           pos = idxSieben + (k - 5);
+        }
+        int x = pos % WIDTH;
+        int y = pos / WIDTH;
+        ledmatrix.gridAddPixel(x, y, color);
+    }
+  }
+  
+  return false;
+}

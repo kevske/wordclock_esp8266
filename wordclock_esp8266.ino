@@ -204,6 +204,9 @@ bool dynColorShiftActive = false;              // stores if dynamic color shift 
 uint8_t dynColorShiftPhase = 0;               // stores the phase of the dynamic color shift
 uint8_t dynColorShiftSpeed = 1;               // stores the speed of the dynamic color shift -> used to calc update period
 bool randomMessageActive = false;             // stores if a random message is currently being displayed
+bool siebenSechsAnimActive = false;           // stores if 18:07 animation is active
+bool siebenSechsAnimDone = false;             // stores if 18:07 animation has finished for today
+long siebenSechsAnimStart = 0;                // start time of 18:07 animation
 
 // nightmode settings
 uint8_t nightModeStartHour = 22;
@@ -226,6 +229,7 @@ void showTemperature(int temp);
 void showWeatherAnimation(int code, int frame);
 void showSunshineIndicator(float sunshineSeconds);
 void stateChange(uint8_t newState, bool persistant);
+bool animateSiebenSechs(long elapsedMillis);
 
 void setup() {
   // put your setup code here, to run once:
@@ -614,8 +618,42 @@ void updateStateBehavior(uint8_t state){
         uint8_t hours = ntp.getHours24();
         uint8_t minutes = ntp.getMinutes();
         if (hours == 18 && minutes == 7) {
-          showStringOnClock("SIEBEN SECHS", LEDMatrix::Color24bit(255, 0, 0));
+          if (!siebenSechsAnimActive && !siebenSechsAnimDone) {
+             siebenSechsAnimActive = true;
+             siebenSechsAnimStart = millis();
+          }
+          
+          if (siebenSechsAnimActive) {
+             bool done = animateSiebenSechs(millis() - siebenSechsAnimStart);
+             if (done) {
+               siebenSechsAnimActive = false;
+               siebenSechsAnimDone = true;
+               // Force a redraw of the clock immediately after animation ends
+               // by falling through to the normal clock update below?
+               // Actually we should probably just let the next cycle handle it,
+               // but to be smooth, let's just clear for this frame or re-enter standard clock.
+               entryAction(st_clock); 
+             }
+          } else {
+             // Animation done, show normal time
+             // We need to duplicate the normal clock logic here or fall through?
+             // The original plan: "If done: Show normal time."
+             // So we should copy the logic from the else block.
+             static uint8_t lastMinutes = 0;
+             static String timeAsString = "";
+             // Force update since we just came back from animation
+             timeAsString = timeToString(hours, minutes);
+             lastMinutes = minutes;
+             
+             showStringOnClock(timeAsString, maincolor_clock);
+             drawMinuteIndicator(minutes, maincolor_clock);
+          }
         } else {
+          // Reset done flag if not 18:07
+          if (siebenSechsAnimDone) {
+             siebenSechsAnimDone = false;
+          }
+          
           static uint8_t lastMinutes = 0;
           static String timeAsString = "";
           if(lastMinutes != minutes){

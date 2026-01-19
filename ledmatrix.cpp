@@ -93,7 +93,11 @@ void LEDMatrix::setupMatrix()
     (*neomatrix).begin();       
     (*neomatrix).setTextWrap(false);
     (*neomatrix).setBrightness(brightness);
+    #ifdef ESP8266
     randomSeed(ESP.getChipId() ^ micros()); // Better entropy than analogRead(0)
+    #else
+    randomSeed(0); // Fallback for testing
+    #endif
 }
 
 /**
