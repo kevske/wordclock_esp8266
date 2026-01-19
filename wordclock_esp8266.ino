@@ -613,14 +613,18 @@ void updateStateBehavior(uint8_t state){
         }
         uint8_t hours = ntp.getHours24();
         uint8_t minutes = ntp.getMinutes();
-        static uint8_t lastMinutes = 0;
-        static String timeAsString = "";
-        if(lastMinutes != minutes){
-          timeAsString = timeToString(hours, minutes);
-          lastMinutes = minutes;
+        if (hours == 18 && minutes == 7) {
+          showStringOnClock("SIEBEN SECHS", LEDMatrix::Color24bit(255, 0, 0));
+        } else {
+          static uint8_t lastMinutes = 0;
+          static String timeAsString = "";
+          if(lastMinutes != minutes){
+            timeAsString = timeToString(hours, minutes);
+            lastMinutes = minutes;
+          }
+          showStringOnClock(timeAsString, maincolor_clock);
+          drawMinuteIndicator(minutes, maincolor_clock);
         }
-        showStringOnClock(timeAsString, maincolor_clock);
-        drawMinuteIndicator(minutes, maincolor_clock);
       }
       break;
     // state diclock

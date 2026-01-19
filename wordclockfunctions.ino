@@ -552,36 +552,33 @@ void showTemperature(int temp) {
  */
 void showWeatherAnimation(int code, int frame) {
     // Mapping WMO codes
-    // 0, 1: Sunny (Yellow Sun)
-    // 2, 3: Cloudy (White Cloud, Moving)
-    // 45, 48: Fog (Dim White, Chessboard pattern, Static at top)
-    // 51-67, 80-82: Rainy (Dark Blue, Natural fall)
-    // 71-77, 85-86: Snowy (White, Slower, Clumpy)
-    // 95, 96, 99: Thunderstorm (Heavy Rain + Lightning Bolts in top half)
+    // 0, 1: Sunny (Yellow Sun with animated rays)
+    // 2: Partly Cloudy (Sun + static cloud)
+    // 3: Overcast (Two static clouds with shimmer)
+    // 45, 48: Fog (Chessboard pattern)
+    // 51-67, 80-82: Rainy (Falling drops)
+    // 71-77, 85-86: Snowy (Falling flakes)
+    // 95, 96, 99: Thunderstorm (Rain + lightning)
     
     // Colors
     uint32_t colSun = LEDMatrix::Color24bit(255, 200, 0);   // Yellow/Orange
-    uint32_t colRain = LEDMatrix::Color24bit(0, 0, 255);     // Blue
-    uint32_t colCloud = LEDMatrix::Color24bit(150, 150, 150); // Dim White for clouds (too bright is distracting) -> User asked for White
-    // User asked for "Clouds white". Let's use full white or slightly dimmed to differentiate from snow? 
-    // "yes, and make the clouds white" -> OK, White.
-    colCloud = LEDMatrix::Color24bit(200, 200, 200); 
-    
+    uint32_t colRain = LEDMatrix::Color24bit(0, 0, 255);    // Blue
+    uint32_t colCloud = LEDMatrix::Color24bit(200, 200, 200); // White clouds
+    uint32_t colCloudDim = LEDMatrix::Color24bit(120, 120, 120); // Dimmer cloud for shimmer
     uint32_t colFog = LEDMatrix::Color24bit(50, 50, 50);    // Very Dim White
     uint32_t colSnow = LEDMatrix::Color24bit(255, 255, 255); // Full White
     uint32_t colLightning = LEDMatrix::Color24bit(255, 255, 100); // Yellow/White Bolt
 
     if (code == 0 || code == 1) {
-        // SUNNY: Draw Sun
-        // Center x=5. y=0..2
+        // SUNNY: Draw Sun centered at x=5
         ledmatrix.gridAddPixel(5, 0, colSun);
         ledmatrix.gridAddPixel(4, 1, colSun);
         ledmatrix.gridAddPixel(5, 1, colSun);
         ledmatrix.gridAddPixel(6, 1, colSun);
         ledmatrix.gridAddPixel(5, 2, colSun);
         
-        // Animated Rays
-        if (frame % 8 < 4) { // Slow blink
+        // Animated Rays - alternate between two patterns
+        if (frame % 8 < 4) {
             ledmatrix.gridAddPixel(3, 1, colSun);
             ledmatrix.gridAddPixel(7, 1, colSun);
             ledmatrix.gridAddPixel(5, 3, colSun); 
@@ -593,60 +590,65 @@ void showWeatherAnimation(int code, int frame) {
         }
     } 
     else if (code == 2) {
-        // PARTLY CLOUDY: Sun + Cloud
-        // First draw Sun (same as Sunny)
-        ledmatrix.gridAddPixel(5, 0, colSun);
+        // PARTLY CLOUDY: Sun + static cloud (always visible)
+        // Draw Sun on left side (x=2-4)
+        ledmatrix.gridAddPixel(3, 0, colSun);
+        ledmatrix.gridAddPixel(2, 1, colSun);
+        ledmatrix.gridAddPixel(3, 1, colSun);
         ledmatrix.gridAddPixel(4, 1, colSun);
-        ledmatrix.gridAddPixel(5, 1, colSun);
-        ledmatrix.gridAddPixel(6, 1, colSun);
-        ledmatrix.gridAddPixel(5, 2, colSun);
+        ledmatrix.gridAddPixel(3, 2, colSun);
         
-        // Animated Rays
-        if (frame % 8 < 4) { 
-            ledmatrix.gridAddPixel(3, 1, colSun);
-            ledmatrix.gridAddPixel(7, 1, colSun);
-            ledmatrix.gridAddPixel(5, 3, colSun); 
+        // Animated sun rays
+        if (frame % 8 < 4) {
+            ledmatrix.gridAddPixel(1, 1, colSun);
+            ledmatrix.gridAddPixel(5, 1, colSun);
         } else {
+            ledmatrix.gridAddPixel(2, 0, colSun);
             ledmatrix.gridAddPixel(4, 0, colSun);
-            ledmatrix.gridAddPixel(6, 0, colSun);
-            ledmatrix.gridAddPixel(4, 2, colSun);
-            ledmatrix.gridAddPixel(6, 2, colSun);
         }
 
-        // Then draw Cloud on top
-        int offset = (frame / 4) % (WIDTH + 8) - 7;
-        for(int x=0; x<WIDTH; x++) {
-             int relX = x - offset;
-             if (relX >= 3 && relX <= 7) ledmatrix.gridAddPixel(x, 1, colCloud);
-             if (relX >= 2 && relX <= 8) ledmatrix.gridAddPixel(x, 2, colCloud);
-        }
+        // Static cloud on right side (x=6-10, y=1-2) - always visible
+        // Cloud top row (smaller)
+        ledmatrix.gridAddPixel(7, 1, colCloud);
+        ledmatrix.gridAddPixel(8, 1, colCloud);
+        ledmatrix.gridAddPixel(9, 1, colCloud);
+        // Cloud bottom row (wider)
+        ledmatrix.gridAddPixel(6, 2, colCloud);
+        ledmatrix.gridAddPixel(7, 2, colCloud);
+        ledmatrix.gridAddPixel(8, 2, colCloud);
+        ledmatrix.gridAddPixel(9, 2, colCloud);
+        ledmatrix.gridAddPixel(10, 2, colCloud);
     }
     else if (code == 3) {
-        // CLOUDY: Two Moving Clouds
-        int cycle = WIDTH + 8;
+        // OVERCAST: Two static clouds with shimmer effect
+        // Alternate brightness for shimmer animation
+        uint32_t cloud1Color = (frame % 8 < 4) ? colCloud : colCloudDim;
+        uint32_t cloud2Color = (frame % 8 < 4) ? colCloudDim : colCloud;
         
-        // Cloud 1 (Standard)
-        int offset1 = (frame / 4) % cycle - 7;
+        // Cloud 1 (left side, x=0-4, y=0-1)
+        ledmatrix.gridAddPixel(1, 0, cloud1Color);
+        ledmatrix.gridAddPixel(2, 0, cloud1Color);
+        ledmatrix.gridAddPixel(3, 0, cloud1Color);
+        ledmatrix.gridAddPixel(0, 1, cloud1Color);
+        ledmatrix.gridAddPixel(1, 1, cloud1Color);
+        ledmatrix.gridAddPixel(2, 1, cloud1Color);
+        ledmatrix.gridAddPixel(3, 1, cloud1Color);
+        ledmatrix.gridAddPixel(4, 1, cloud1Color);
         
-        // Cloud 2 (Starts in middle, half cycle offset)
-        int offset2 = ((frame / 4) + (cycle / 2)) % cycle - 7;
-
-        for(int x=0; x<WIDTH; x++) {
-             // Draw Cloud 1
-             int relX1 = x - offset1;
-             if (relX1 >= 3 && relX1 <= 7) ledmatrix.gridAddPixel(x, 1, colCloud);
-             if (relX1 >= 2 && relX1 <= 8) ledmatrix.gridAddPixel(x, 2, colCloud);
-
-             // Draw Cloud 2
-             int relX2 = x - offset2;
-             if (relX2 >= 3 && relX2 <= 7) ledmatrix.gridAddPixel(x, 1, colCloud);
-             if (relX2 >= 2 && relX2 <= 8) ledmatrix.gridAddPixel(x, 2, colCloud);
-        }
+        // Cloud 2 (right side, x=5-10, y=1-2)
+        ledmatrix.gridAddPixel(6, 1, cloud2Color);
+        ledmatrix.gridAddPixel(7, 1, cloud2Color);
+        ledmatrix.gridAddPixel(8, 1, cloud2Color);
+        ledmatrix.gridAddPixel(9, 1, cloud2Color);
+        ledmatrix.gridAddPixel(5, 2, cloud2Color);
+        ledmatrix.gridAddPixel(6, 2, cloud2Color);
+        ledmatrix.gridAddPixel(7, 2, cloud2Color);
+        ledmatrix.gridAddPixel(8, 2, cloud2Color);
+        ledmatrix.gridAddPixel(9, 2, cloud2Color);
+        ledmatrix.gridAddPixel(10, 2, cloud2Color);
     }
     else if (code == 45 || code == 48) {
-        // FOG: Static chessboard pattern, dim white, top rows
-        // "stay at the top. but use every second pixel statically in a dim white (chess board pattern)"
-        // Rows 0-3
+        // FOG: Static chessboard pattern, dim white, top rows (0-3)
         for(int y=0; y<=3; y++) {
             for(int x=0; x<WIDTH; x++) {
                 if ((x + y) % 2 == 0) {
@@ -656,54 +658,43 @@ void showWeatherAnimation(int code, int frame) {
         }
     }
     else if ((code >= 51 && code <= 67) || (code >= 80 && code <= 82)) {
-        // RAINY: Natural falling drops
-        // Use a pseudo-random hash based on column + frame to decide drops
-        // Faster fall
+        // RAINY: Falling drops across all columns
         for (int x = 0; x < WIDTH; x++) {
-             // Generate a "start time" offset for each column so they don't sync
              int colOffset = (x * 7) % 20; 
-             int dropY = (frame + colOffset) % 7; // Cycle through 0-6
+             int dropY = (frame + colOffset) % 7;
              
-             // Draw drop if in range 0-3 (top half)
              if (dropY <= 3) {
                  ledmatrix.gridAddPixel(x, dropY, colRain);
-                 // Trail?
-                 if (dropY > 0) ledmatrix.gridAddPixel(x, dropY-1, LEDMatrix::Color24bit(0,0,50)); // Faint trail
+                 if (dropY > 0) ledmatrix.gridAddPixel(x, dropY-1, LEDMatrix::Color24bit(0,0,50));
              }
         }
     }
     else if ((code >= 71 && code <= 77) || (code >= 85 && code <= 86)) {
-        // SNOWY: Slower, clumpier
-        for (int x = 0; x < WIDTH; x+=2) { // Every second column for clumpiness? Or just scattered
-             // Slower fall: frame / 3
+        // SNOWY: Slower falling flakes
+        for (int x = 0; x < WIDTH; x+=2) {
              int colOffset = (x * 13) % 20;
              int flakeY = ((frame / 3) + colOffset) % 8;
              
              if (flakeY <= 4) {
-                 // Draw 2x1 flake?
                  ledmatrix.gridAddPixel(x, flakeY, colSnow);
-                 if (x+1 < WIDTH && (flakeY+x)%3 == 0) ledmatrix.gridAddPixel(x+1, flakeY, colSnow); // Occasional neighbor
+                 if (x+1 < WIDTH && (flakeY+x)%3 == 0) ledmatrix.gridAddPixel(x+1, flakeY, colSnow);
              }
         }
     }
     else if (code >= 95) {
         // THUNDERSTORM: Heavy Rain + Lightning
-        // Base: Heavy Rain (similar to rain but more intensity)
         for (int x = 0; x < WIDTH; x++) {
              int colOffset = (x * 7) % 20; 
-             int dropY = (frame * 2 + colOffset) % 8; // Faster rain
+             int dropY = (frame * 2 + colOffset) % 8;
              if (dropY <= 3) ledmatrix.gridAddPixel(x, dropY, colRain);
         }
         
-        // Lightning: "yellow line/flash downwards in the top half"
-        // Occasional flash
-        if (frame % 30 < 3) { // Flash for 3 frames every 30 frames
-             // Random X position determined by frame bucket
+        // Lightning flash
+        if (frame % 30 < 3) {
              int flashX = (frame / 30 * 17) % WIDTH; 
              ledmatrix.gridAddPixel(flashX, 0, colLightning);
              ledmatrix.gridAddPixel(flashX, 1, colLightning);
              ledmatrix.gridAddPixel(flashX, 2, colLightning);
-             // Maybe a zig-zag neighbor
              if (frame % 2 == 0 && flashX < WIDTH-1) ledmatrix.gridAddPixel(flashX+1, 1, colLightning);
              else if (flashX > 0) ledmatrix.gridAddPixel(flashX-1, 1, colLightning);
         }
