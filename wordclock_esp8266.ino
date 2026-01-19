@@ -731,22 +731,43 @@ void updateStateBehavior(uint8_t state){
          static int weatherFrame = 0;
          weatherFrame++;
          
-         bool tomorrow = (ntp.getHours24() >= 12);
-         int temp = weather.getTemperature(tomorrow);
-         int code = weather.getWeatherCode(tomorrow);
-         float sunshine = weather.getSunshineDuration(tomorrow);
-         
-         // Clear Matrix (was removed from showTemperature)
+         // Clear Matrix
          ledmatrix.gridFlush();
          
-         // Draw Weather Animation
-         showWeatherAnimation(code, weatherFrame);
-         
-         // Draw Temperature
-         showTemperature(temp);
-         
-         // Draw Sunshine Indicator
-         showSunshineIndicator(sunshine);
+         // Check if weather data is valid
+         if (!weather.isDataValid()) {
+           // Show loading animation - spinning circle
+           // Circle positions around center (x=5, y=5) with radius ~3
+           static const uint8_t circleX[] = {5, 7, 8, 8, 7, 5, 3, 2, 2, 3};
+           static const uint8_t circleY[] = {2, 3, 4, 6, 7, 8, 7, 6, 4, 3};
+           const int circleLen = 10;
+           
+           uint32_t dotColor = LEDMatrix::Color24bit(100, 100, 255); // Light blue
+           uint32_t tailColor = LEDMatrix::Color24bit(30, 30, 80);   // Dim trail
+           
+           // Draw spinning dot with tail
+           int headPos = (weatherFrame / 2) % circleLen;
+           for (int i = 0; i < 3; i++) {
+             int pos = (headPos - i + circleLen) % circleLen;
+             uint32_t color = (i == 0) ? dotColor : tailColor;
+             ledmatrix.gridAddPixel(circleX[pos], circleY[pos], color);
+           }
+         } else {
+           // Normal weather display
+           bool tomorrow = (ntp.getHours24() >= 12);
+           int temp = weather.getTemperature(tomorrow);
+           int code = weather.getWeatherCode(tomorrow);
+           float sunshine = weather.getSunshineDuration(tomorrow);
+           
+           // Draw Weather Animation
+           showWeatherAnimation(code, weatherFrame);
+           
+           // Draw Temperature
+           showTemperature(temp);
+           
+           // Draw Sunshine Indicator
+           showSunshineIndicator(sunshine);
+         }
       }
       break;
   }
