@@ -86,10 +86,55 @@ void WeatherClient::parseJson(String payload) {
   }
 }
 
-// Extracts the Nth value from a JSON array identified by key (Same logic, helper to keep code clean)
+// Extracts the Nth value from a JSON array in the "daily" section
+// This is needed because "sunshine_duration" appears twice in the API response:
+// once in "daily_units" (as a string "s") and once in "daily" (as the data array)
 float WeatherClient::extractDailyValueAtIndex(String payload, String key, int targetIndex) {
-  // exact same implementation as extractValueAtIndex for now, just reused logic
-  return extractValueAtIndex(payload, key, targetIndex);
+  // First, find the "daily":{ section (not "daily_units")
+  int dailyStart = payload.indexOf("\"daily\":{");
+  if (dailyStart == -1) {
+    // Try alternate format with space
+    dailyStart = payload.indexOf("\"daily\": {");
+  }
+  if (dailyStart == -1) return -999;
+  
+  // Now search for the key starting from within the daily section
+  int keyPos = payload.indexOf(key, dailyStart);
+  if (keyPos == -1) return -999;
+  
+  // Find the array start
+  int cursor = keyPos + key.length();
+  while (cursor < payload.length() && (payload[cursor] == ' ' || payload[cursor] == ':')) {
+    cursor++;
+  }
+  
+  if (cursor >= payload.length() || payload[cursor] != '[') return -999;
+  
+  int arrayStart = cursor;
+  int currentIndex = 0;
+  int searchPos = arrayStart + 1;
+  
+  // Skip to the target index
+  while (currentIndex < targetIndex) {
+    int commaPos = payload.indexOf(',', searchPos);
+    if (commaPos == -1) return -999;
+    searchPos = commaPos + 1;
+    currentIndex++;
+  }
+  
+  // Extract the number
+  int nextComma = payload.indexOf(',', searchPos);
+  int arrayEnd = payload.indexOf(']', searchPos);
+  
+  int endPos;
+  if (nextComma == -1) endPos = arrayEnd;
+  else if (arrayEnd == -1) endPos = nextComma;
+  else endPos = (nextComma < arrayEnd) ? nextComma : arrayEnd;
+  
+  if (endPos == -1) return -999;
+  
+  String valStr = payload.substring(searchPos, endPos);
+  return valStr.toFloat();
 }
 
 float WeatherClient::extractValueAtIndex(String payload, String key, int targetIndex) {

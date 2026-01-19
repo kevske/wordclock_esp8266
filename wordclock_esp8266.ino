@@ -1437,6 +1437,24 @@ void handleDataRequest() {
       message += ",";
       message += "\"colorshiftspeed\":\"" + String(dynColorShiftSpeed) + "\"";
     }
+    else if(keystr == "weather"){
+      bool tomorrow = (ntp.getHours24() >= 12);
+      message += "\"dataValid\":\"" + String(weather.isDataValid()) + "\"";
+      message += ",";
+      message += "\"sunshineToday\":\"" + String(weather.getSunshineDuration(false)) + "\"";
+      message += ",";
+      message += "\"sunshineTodayHours\":\"" + String(weather.getSunshineDuration(false) / 3600.0) + "\"";
+      message += ",";
+      message += "\"sunshineTomorrow\":\"" + String(weather.getSunshineDuration(true)) + "\"";
+      message += ",";
+      message += "\"sunshineTomorrowHours\":\"" + String(weather.getSunshineDuration(true) / 3600.0) + "\"";
+      message += ",";
+      message += "\"tempToday\":\"" + String(weather.getTemperature(false)) + "\"";
+      message += ",";
+      message += "\"tempTomorrow\":\"" + String(weather.getTemperature(true)) + "\"";
+      message += ",";
+      message += "\"displayingTomorrow\":\"" + String(tomorrow) + "\"";
+    }
     message += "}";
     server.send(200, "application/json", message);
   }
