@@ -37,7 +37,7 @@
 
 // own libraries
 #include "udplogger.h"
-#include "ntp_client_plus.h"
+#include <time.h>
 #include "ledmatrix.h"
 #include "tetris.h"
 #include "snake.h"
@@ -128,8 +128,6 @@ const String hostname = "wordclock";
 // URL DNS server
 const char WebserverURL[] = "www.wordclock.local";
 
-int utcOffset = 60; // UTC offset in minutes
-
 // ----------------------------------------------------------------------------------
 //                                        GLOBAL VARIABLES
 // ----------------------------------------------------------------------------------
@@ -170,7 +168,7 @@ long lastheartbeat = millis();      // time of last heartbeat sending
 long lastStep = millis();           // time of last animation step
 long lastLEDdirect = -TIMEOUT_LEDDIRECT; // time of last direct LED command (=> fall back to normal mode after timeout)
 long lastStateChange = millis();    // time of last state change
-long lastNTPUpdate = millis() - (PERIOD_NTPUPDATE-3000);  // time of last NTP update
+long lastNTPUpdate = 0;  // Not used anymore with configTime
 long lastAnimationStep = millis();  // time of last Matrix update
 long lastNightmodeCheck = millis()  - (PERIOD_NIGHTMODECHECK-3000); // time of last nightmode check
 long lastRandomMessageCheck = 0;    // time of last random message check
@@ -183,8 +181,7 @@ uint16_t behaviorUpdatePeriod = PERIOD_TIMEVISUUPDATE; // holdes the period in w
 
 // Create necessary global objects
 UDPLogger logger;
-WiFiUDP NTPUDP;
-NTPClientPlus ntp = NTPClientPlus(NTPUDP, "pool.ntp.org", utcOffset, true);
+const char* TZ_INFO = "CET-1CEST,M3.5.0,M10.5.0/3"; // Central Europe (Oedheim, Germany)
 LEDMatrix ledmatrix = LEDMatrix(&matrix, brightness, &logger);
 Tetris mytetris = Tetris(&ledmatrix, &logger);
 Snake mysnake = Snake(&ledmatrix, &logger);
@@ -214,11 +211,8 @@ uint8_t nightModeStartMin = 0;
 uint8_t nightModeEndHour = 7;
 uint8_t nightModeEndMin = 0;
 
-// Watchdog counter to trigger restart if NTP update was not possible 30 times in a row (5min)
-int watchdogCounter = 30;
-
-bool waitForTimeAfterReboot = false; // wait for time update after reboot
-bool ntpRequestSent = false;         // stores if ntp request is pending
+// counter for time updates
+int timeUpdateCounter = 0;
 
 // ----------------------------------------------------------------------------------
 //                                        SETUP
@@ -347,10 +341,8 @@ void setup() {
   logger.logString("Reset Reason: " + ESP.getResetReason());
 
   // setup NTP
-  updateUTCOffsetFromTimezoneAPI(logger, ntp);
-  ntp.setupNTPClient();
-  logger.logString("NTP running");
-  logger.logString("Time: " +  ntp.getFormattedTime());
+  configTime(TZ_INFO, "pool.ntp.org");
+  logger.logString("NTP running (configTime)");
 
   // load persistent variables from EEPROM
   loadMainColorFromEEPROM();
@@ -429,14 +421,10 @@ void loop() {
     static wl_status_t prevWiFiStatus = WL_DISCONNECTED;
     wl_status_t currStatus = WiFi.status();
     if (!apmode && prevWiFiStatus != currStatus && currStatus == WL_CONNECTED) {
-      Serial.println("WiFi reconnected; refreshing multicast logger and NTP client");
+      Serial.println("WiFi reconnected; refreshing multicast logger");
       logger.refreshInterface(WiFi.localIP());
-      // Reinitialize NTP UDP binding to be safe after long outages
-      ntp.end();
-      ntp.setupNTPClient();
-      // Trigger a near-term NTP update
-      lastNTPUpdate = millis() - (PERIOD_NTPUPDATE - 1000);
       // Force weather refresh after reconnect
+      weather.invalidateCache();
       weather.invalidateCache();
     }
     prevWiFiStatus = currStatus;
@@ -450,6 +438,15 @@ void loop() {
 
   // Handle Weather Updates
   weather.update();
+  
+  // Proactive WiFi Monitor: if weather service fails repeatedly despite "connected" status,
+  // it usually means a ghost connection. Force a reconnect.
+  if (!apmode && weather.getConsecutiveFailures() >= 3) {
+    Serial.println("Weather client failed 3 times; forcing WiFi reconnect");
+    logger.logString("Connectivity check failed; forcing WiFi reconnect");
+    WiFi.reconnect();
+    weather.invalidateCache(); // reset to try again brand new
+  }
 
   // Handle Temperature Mode Timeout
   if (currentState == st_temperature) {
@@ -482,71 +479,17 @@ void loop() {
   }
 
   // NTP time update
-  if(!ntpRequestSent && (millis() - lastNTPUpdate > PERIOD_NTPUPDATE)){
-    ntp.sendRequest();
-    ntpRequestSent = true;
-  }
-
-  if(ntpRequestSent){
-    int res = ntp.checkResponse();
-    
-    // res values: 0=success, 99=pending, -1=timeout, 1=diff too large, 2=invalid
-    if(res != 99){ 
-      ntpRequestSent = false;
-      
-      if(res == 0){
-        ntp.calcDate();
-        logger.logString("NTP-Update successful");
-        logger.logPrintf("Time: %s", ntp.getFormattedTime().c_str());
-        logger.logPrintf("Date: %s", ntp.getFormattedDate().c_str());
-        logger.logPrintf("Day of Week (Mon=1, Sun=7): %u", ntp.getDayOfWeek());
-        logger.logPrintf("Summertime: %d", ntp.updateSWChange());
-        lastNTPUpdate = millis();
-        watchdogCounter = 30;
-        updateBrightnessAndNightMode();
-        if(waitForTimeAfterReboot && !nightMode){
-          // update mode (e.g. write the current time onto the matrix) first time after reboot
-          entryAction(currentState);
-          updateStateBehavior(currentState);
-          ledmatrix.drawOnMatrixInstant();
-        }
-        waitForTimeAfterReboot = false;
-      }
-      else if(res == -1){
-        logger.logString("NTP-Update not successful. Reason: Timeout");
-        lastNTPUpdate += 10000;
-        watchdogCounter--;
-      }
-      else if(res == 1){
-        logger.logString("NTP-Update not successful. Reason: Too large time difference");
-        logger.logString("Time: " +  ntp.getFormattedTime());
-        logger.logString("Date: " +  ntp.getFormattedDate());
-        logger.logString("Day of Week (Mon=1, Sun=7): " +  String(ntp.getDayOfWeek()));
-        logger.logString("Summertime: " + String(ntp.updateSWChange()));
-        lastNTPUpdate += 10000;
-        watchdogCounter--;
-      }
-      else {
-        logger.logString("NTP-Update not successful. Reason: NTP time not valid (<1970)");
-        lastNTPUpdate += 10000;
-        watchdogCounter--;
-      }
-  
-      logger.logString("Watchdog Counter: " + String(watchdogCounter));
-      if(watchdogCounter <= 0){
-          logger.logString("Watchdog threshold reached");
-          if (WiFi.status() != WL_CONNECTED) {
-            // If WiFi is down, prefer reconnect attempts over reboot loops
-            logger.logString("WiFi down; attempting reconnect instead of restart");
-            WiFi.reconnect();
-            watchdogCounter = 30; // reset watchdog to give reconnection time
-            lastNTPUpdate = millis(); // backoff until next NTP try
-          } else {
-            logger.logString("Trigger restart due to watchdog (WiFi connected)...");
-            delay(100);
-            ESP.restart();
-          }
-      }
+  // Periodic NTP Status Log
+  if(millis() - lastNTPUpdate > 3600000){ // Log every hour
+    time_t now = time(nullptr);
+    struct tm* timeinfo = localtime(&now);
+    if (timeinfo->tm_year > 70) { // Check if synced
+      logger.logPrintf("NTP Status: OK, Time: %02d:%02d:%02d", timeinfo->tm_hour, timeinfo->tm_min, timeinfo->tm_sec);
+      lastNTPUpdate = millis();
+      updateBrightnessAndNightMode();
+    } else {
+      logger.logString("NTP Status: Not yet synced");
+      // configTime handles retries automatically
     }
   }
 
@@ -561,9 +504,11 @@ void loop() {
     lastRandomMessageCheck = millis();
     
     // Get current time components
-    uint8_t hours = ntp.getHours24();
-    uint8_t minutes = ntp.getMinutes();
-    uint8_t seconds = ntp.getSeconds();
+    time_t now = time(nullptr);
+    struct tm* timeinfo = localtime(&now);
+    uint8_t hours = timeinfo->tm_hour;
+    uint8_t minutes = timeinfo->tm_min;
+    uint8_t seconds = timeinfo->tm_sec;
     
     // Check if we should start displaying a random message
     if(!randomMessageActive && !nightMode && !ledOff && shouldDisplayRandomMessage(hours, minutes, seconds)) {
@@ -615,8 +560,10 @@ void updateStateBehavior(uint8_t state){
           filterFactor = DEFAULT_SMOOTHING_FACTOR;
           behaviorUpdatePeriod = PERIOD_TIMEVISUUPDATE;
         }
-        uint8_t hours = ntp.getHours24();
-        uint8_t minutes = ntp.getMinutes();
+        time_t now = time(nullptr);
+        struct tm* timeinfo = localtime(&now);
+        uint8_t hours = timeinfo->tm_hour;
+        uint8_t minutes = timeinfo->tm_min;
         if (hours == 18 && minutes == 7) {
           if (!siebenSechsAnimActive && !siebenSechsAnimDone) {
              siebenSechsAnimActive = true;
@@ -668,9 +615,9 @@ void updateStateBehavior(uint8_t state){
     // state diclock
     case st_diclock:
       {
-        int hours = ntp.getHours24();
-        int minutes = ntp.getMinutes();
-        showDigitalClock(hours, minutes, maincolor_clock);
+        time_t now = time(nullptr);
+        struct tm* timeinfo = localtime(&now);
+        showDigitalClock(timeinfo->tm_hour, timeinfo->tm_min, maincolor_clock);
       }
       break;
     // state spiral
@@ -754,7 +701,9 @@ void updateStateBehavior(uint8_t state){
            }
          } else {
            // Normal weather display
-           bool tomorrow = (ntp.getHours24() >= 12);
+           time_t now = time(nullptr);
+           struct tm* timeinfo = localtime(&now);
+           bool tomorrow = (timeinfo->tm_hour >= 12);
            int temp = weather.getTemperature(tomorrow);
            int code = weather.getWeatherCode(tomorrow);
            float sunshine = weather.getSunshineDuration(tomorrow);
@@ -792,7 +741,9 @@ bool isBetween(int t, int a, int b) {
 void updateBrightnessAndNightMode(){
   // 0. Safety Check: If NTP hasn't synced (Year < 2020), do not engage night mode logic.
   // This prevents the clock from getting stuck in night mode if it boots with default (1970) time.
-  if (ntp.getYear() < 2020) {
+  time_t now = time(nullptr);
+  struct tm* timeinfo = localtime(&now);
+  if (timeinfo->tm_year < 120) { // tm_year is years since 1900. 120 = 2020.
       if (nightMode) {
          nightMode = false;
          logger.logString("Time invalid (<2020), forcing Day Mode");
@@ -801,8 +752,8 @@ void updateBrightnessAndNightMode(){
       return; 
   }
 
-  int hours = ntp.getHours24();
-  int minutes = ntp.getMinutes();
+  int hours = timeinfo->tm_hour;
+  int minutes = timeinfo->tm_min;
   
   bool previousNightMode = nightMode;
   bool nextNightMode = false; // Default to active (Day mode)
@@ -816,10 +767,7 @@ void updateBrightnessAndNightMode(){
        uint8_t target = brightness;
        for (int i=0; i<=target; i+=5) {
            ledmatrix.setBrightness(i);
-           ledmatrix.drawOnMatrixInstant(); // Force update to draw current limit? actually setBrightness updates next draw.
-           // To visually ramp, we might need to force draw, but just setting limit prevents internal current spike logic? 
-           // Actually, setBrightness just sets a global scaler. The power spike happens on next .show().
-           // To be safe, we just ramp the scalar.
+           ledmatrix.drawOnMatrixInstant(); 
            delay(10); 
            ESP.wdtFeed(); // Feed dog during ramp
        }
@@ -844,53 +792,38 @@ void updateBrightnessAndNightMode(){
   int sunriseEnd = (endInMinutes + transitionDuration) % 1440;
 
   // 1. Check Night Mode (Strict OFF)
-  // Starts at Sunset End, Ends at Sunrise Start (endInMinutes)
   if (isBetween(currentTimeInMinutes, sunsetEnd, endInMinutes)) {
       nextNightMode = true;
-      // Ensure brightness is 0? 
-      // ledmatrix.setBrightness(0); // Not strictly needed as nightMode=true flushes grid
   }
   // 2. Check Sunset (Fade Out)
-  // Starts at NightModeStart, Ends at SunsetEnd
   else if (isBetween(currentTimeInMinutes, startInMinutes, sunsetEnd)) {
-      // Calculate progress 0..1
       int elapsed = currentTimeInMinutes - startInMinutes;
       if (elapsed < 0) elapsed += 1440;
-      
-      float progress = (float)elapsed / transitionDuration; // 0.0 to 1.0
-      // Fade Out: Max -> 0
+      float progress = (float)elapsed / transitionDuration;
       uint8_t newBrightness = (uint8_t)(brightness * (1.0 - progress));
       ledmatrix.setBrightness(newBrightness);
-      nextNightMode = false; // Still technically "active" logic, but not "OFF" execution state
-      // Actually original logic set nightMode=false here?
-      // Original: nightMode = false; (default at top)
+      nextNightMode = false;
   }
   // 3. Check Sunrise (Fade In)
-  // Starts at NightModeEnd, Ends at SunriseEnd
   else if (isBetween(currentTimeInMinutes, endInMinutes, sunriseEnd)) {
-      // Calculate progress 0..1
       int elapsed = currentTimeInMinutes - endInMinutes;
       if (elapsed < 0) elapsed += 1440;
-      
-      float progress = (float)elapsed / transitionDuration; // 0.0 to 1.0
-      // Fade In: 0 -> Max
+      float progress = (float)elapsed / transitionDuration;
       uint8_t newBrightness = (uint8_t)(brightness * progress);
       ledmatrix.setBrightness(newBrightness);
       nextNightMode = false;
   }
   // 4. Day Mode
   else {
-      // Full brightness
       ledmatrix.setBrightness(brightness);
       nextNightMode = false;
   }
   
   nightMode = nextNightMode;
 
-  // Log only on state change to reduce string churn
   if (nightMode != previousNightMode) {
-    logger.logString(String("Nightmode state changed: ") + (nightMode ? "Active (OFF)" : "Inactive (ON)"));
-    logger.logString(String("Current Time: ") + hours + ":" + minutes);
+    logger.logString("Nightmode state changed: " + String(nightMode ? "Active (OFF)" : "Inactive (ON)"));
+    logger.logString("Current Time: " + String(hours) + ":" + String(minutes));
   }
 }
 

@@ -1,5 +1,4 @@
 #include <ESP8266HTTPClient.h>
-#include "ntp_client_plus.h"
 #include "udplogger.h"
 
 int api_offset = 0;
@@ -90,12 +89,8 @@ String getJsonParameterValue(String json, String parameter, bool isString) {
  * @brief Update the UTC offset from the timezone string obtained from the IP-API
  * 
  * @param logger UDPLogger object to log messages
- * @param ntp NTPClientPlus object to set the UTC offset
- * @return int 
  */
-void updateUTCOffsetFromTimezoneAPI(UDPLogger &logger, NTPClientPlus &ntp) {
-  bool res = requestAPIData(logger);
-  if (res) {
-    ntp.setUTCOffset(api_offset);      
-  }
+void updateUTCOffsetFromTimezoneAPI(UDPLogger &logger) {
+  requestAPIData(logger);
+  // This function is currently retired in favor of configTime(TZ_INFO)
 }

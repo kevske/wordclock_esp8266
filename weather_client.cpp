@@ -7,6 +7,7 @@ WeatherClient::WeatherClient() {
   sunshineTomorrow = 0;
   lastUpdate = 0;
   lastAttempt = 0;
+  consecutiveFailures = 0;
   dataValid = false;
 }
 
@@ -33,6 +34,7 @@ void WeatherClient::update() {
 
   if (!client.connect(host, 443)) {
     Serial.println("WeatherClient: Connection failed");
+    consecutiveFailures++;
     return;
   }
 
@@ -51,8 +53,13 @@ void WeatherClient::update() {
 
   // Read response
   String payload = client.readString();
+  if (payload.length() == 0) {
+    consecutiveFailures++;
+    return;
+  }
   parseJson(payload);
   lastUpdate = millis();
+  consecutiveFailures = 0; 
 }
 
 void WeatherClient::parseJson(String payload) {
@@ -209,4 +216,8 @@ bool WeatherClient::isDataValid() {
 
 void WeatherClient::invalidateCache() {
     dataValid = false;
+}
+
+int WeatherClient::getConsecutiveFailures() {
+    return consecutiveFailures;
 }
