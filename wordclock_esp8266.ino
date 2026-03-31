@@ -381,9 +381,6 @@ void setup() {
     ledmatrix.gridFlush();
     ledmatrix.drawOnMatrixInstant();
   }
-  else {
-    waitForTimeAfterReboot = true;
-  }
 
   // run the entry action for the initial state
   entryAction(currentState);
@@ -1392,7 +1389,9 @@ void handleDataRequest() {
       message += "\"colorshiftspeed\":\"" + String(dynColorShiftSpeed) + "\"";
     }
     else if(keystr == "weather"){
-      bool tomorrow = (ntp.getHours24() >= 12);
+      time_t now = time(nullptr);
+      struct tm* timeinfo = localtime(&now);
+      bool tomorrow = (timeinfo->tm_hour >= 12);
       message += "\"dataValid\":\"" + String(weather.isDataValid()) + "\"";
       message += ",";
       message += "\"sunshineToday\":\"" + String(weather.getSunshineDuration(false)) + "\"";
