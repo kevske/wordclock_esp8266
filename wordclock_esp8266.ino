@@ -181,7 +181,7 @@ uint16_t behaviorUpdatePeriod = PERIOD_TIMEVISUUPDATE; // holdes the period in w
 
 // Create necessary global objects
 UDPLogger logger;
-const char* TZ_INFO = "CET-1CEST,M3.5.0,M10.5.0/3"; // Central Europe (Oedheim, Germany)
+const char* TZ_INFO = "CET-1CEST-2,M3.5.0/02:00:00,M10.5.0/03:00:00"; // Central Europe (Oedheim, Germany)
 LEDMatrix ledmatrix = LEDMatrix(&matrix, brightness, &logger);
 Tetris mytetris = Tetris(&ledmatrix, &logger);
 Snake mysnake = Snake(&ledmatrix, &logger);
